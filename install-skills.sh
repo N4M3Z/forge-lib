@@ -140,6 +140,12 @@ install_skill() {
     local skill_name
     skill_name="$(yaml_top_value "$skill_yaml" "name")"
     
+    # Fail early if user created config.yml instead of config.yaml
+    if [ -f "config.yml" ]; then
+      echo "Error: config.yml is not supported. Rename to config.yaml." >&2
+      return 1
+    fi
+
     # Sidecar override for scope
     local sidecar_file="defaults.yaml"
     if [ -f "config.yaml" ]; then

@@ -40,9 +40,18 @@ map_tools_to_gemini() {
   echo "$mapped"
 }
 
+# Fail early if user created config.yml instead of config.yaml
+_check_no_yml() {
+  if [ -f "config.yml" ]; then
+    echo "Error: config.yml is not supported. Rename to config.yaml." >&2
+    return 1
+  fi
+}
+
 # Get a value from the sidecar file (config.yaml or defaults.yaml)
 # Usage: sidecar_value "key" ["subkey"]
 sidecar_value() {
+  _check_no_yml || return 1
   local sidecar_file="defaults.yaml"
   [ -f "config.yaml" ] && sidecar_file="config.yaml"
   [ -f "$sidecar_file" ] || return 1
@@ -78,6 +87,7 @@ sidecar_value() {
 # Check if a model is whitelisted for a provider in the sidecar
 # Usage: is_model_whitelisted "gemini" "gemini-1.5-flash"
 is_model_whitelisted() {
+  _check_no_yml || return 1
   local provider="$1"
   local model="$2"
   local sidecar_file="defaults.yaml"
@@ -106,6 +116,7 @@ is_model_whitelisted() {
 
 # Deploy a single agent file to the destination directory.
 deploy_agent() {
+  _check_no_yml || return 1
   local agent_file="$1"
   local dst_dir="$2"
   local dry_run="${3:-}"
