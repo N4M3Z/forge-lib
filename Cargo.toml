@@ -24,6 +24,10 @@ path = "src/bin/install-skills.rs"
 name = "validate-module"
 path = "src/bin/validate-module.rs"
 
+[[bin]]
+name = "install-codex-agent-config"
+path = "src/bin/install-codex-agent-config.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

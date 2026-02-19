@@ -55,6 +55,7 @@ Five modules: `parse` (frontmatter), `strip` (markdown processing), `sidecar` (Y
 | `strip-front` | Strip YAML frontmatter and H1 heading from markdown |
 | `install-agents` | Deploy agent markdown files to Claude/Gemini/Codex directories |
 | `install-skills` | Install skills with provider-specific routing and wrapper generation |
+| `install-codex-agent-config` | Generate Codex role TOML files and managed config block |
 
 ## Updating forge-lib
 

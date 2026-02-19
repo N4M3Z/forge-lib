@@ -4,7 +4,7 @@
 
 RELEASE_DIR := target/release
 BIN_DIR     := bin
-BINARIES    := strip-front install-agents install-skills validate-module
+BINARIES    := strip-front install-agents install-skills validate-module install-codex-agent-config
 
 build:
 	cargo build --release
