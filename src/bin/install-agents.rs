@@ -1,5 +1,6 @@
 use forge_lib::deploy::provider::Provider;
 use forge_lib::deploy::{self, CodexConfigEntry, DeployResult};
+use forge_lib::manifest;
 use forge_lib::parse;
 use forge_lib::sidecar::SidecarConfig;
 use std::env;
@@ -83,27 +84,20 @@ fn parse_args() -> Result<Args, ExitCode> {
     })
 }
 
-fn read_module_name() -> Option<String> {
-    let content = std::fs::read_to_string("module.yaml").ok()?;
-    forge_lib::parse::fm_value(&content, "name").or_else(|| {
-        content.lines().find_map(|l| {
-            l.strip_prefix("name:")
-                .map(|v| v.trim().trim_matches('"').trim_matches('\'').to_string())
-        })
-    })
+fn read_module_name(input_dir: &Path) -> Option<String> {
+    let module_root = input_dir.parent()?;
+    let content = std::fs::read_to_string(module_root.join("module.yaml")).ok()?;
+    forge_lib::parse::module_name(&content)
 }
 
-fn clean_orphans(
-    src_path: &Path,
+fn sync_manifest(
     dst_dir: &Path,
+    module_name: &str,
+    installed: &[String],
     provider: Provider,
-    source_prefix: &str,
     dry_run: bool,
 ) {
-    if source_prefix.is_empty() {
-        return;
-    }
-    match deploy::clean_orphaned_agents(src_path, dst_dir, provider, source_prefix, dry_run) {
+    match deploy::clean_orphaned_agents(dst_dir, module_name, installed, provider, dry_run) {
         Ok(orphans) => {
             let ext = provider.agent_extension();
             for name in &orphans {
@@ -116,6 +110,43 @@ fn clean_orphans(
         }
         Err(e) => eprintln!("Warning: orphan scan failed: {e}"),
     }
+
+    if !dry_run {
+        if let Err(e) = manifest::update(dst_dir, module_name, installed) {
+            eprintln!("Warning: manifest update failed: {e}");
+        }
+    }
+}
+
+fn sync_codex_config(
+    dst_dir: &Path,
+    src_path: &Path,
+    config: &SidecarConfig,
+    source_prefix: &str,
+    dry_run: bool,
+) -> Result<(), ExitCode> {
+    let provider = Provider::Codex;
+    let codex_root = dst_dir.parent().unwrap_or(dst_dir);
+    let config_path = codex_root.join("config.toml");
+    let entries = collect_codex_entries(src_path, provider, config, source_prefix);
+    if let Err(e) = deploy::write_codex_config_block(&config_path, &entries, source_prefix, dry_run)
+    {
+        eprintln!("Error writing config.toml: {e}");
+        return Err(ExitCode::from(1));
+    }
+    if dry_run {
+        println!(
+            "[dry-run] Would write config.toml with {} agent entries",
+            entries.len()
+        );
+    } else {
+        println!(
+            "Updated {} with {} agent entries",
+            config_path.display(),
+            entries.len()
+        );
+    }
+    Ok(())
 }
 
 fn run(args: &Args) -> ExitCode {
@@ -125,11 +156,15 @@ fn run(args: &Args) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    let source_prefix = read_module_name()
-        .map(|name| format!("{name}/{}", args.src_dir))
-        .unwrap_or_default();
+    let module_name = read_module_name(src_path).unwrap_or_default();
+    let source_prefix = if module_name.is_empty() {
+        String::new()
+    } else {
+        format!("{module_name}/{}", args.src_dir)
+    };
 
-    let config = SidecarConfig::load(Path::new("."));
+    let module_root = src_path.parent().unwrap_or(Path::new("."));
+    let config = SidecarConfig::load(module_root);
 
     let dirs = if let Some(ref dst) = args.dst_override {
         vec![PathBuf::from(dst)]
@@ -181,7 +216,7 @@ fn run(args: &Args) -> ExitCode {
             }
         }
 
-        if let Err(code) = deploy_to_dir(
+        let installed = match deploy_to_dir(
             src_path,
             dst_dir,
             provider,
@@ -189,35 +224,19 @@ fn run(args: &Args) -> ExitCode {
             args.dry_run,
             &source_prefix,
         ) {
-            return code;
+            Ok(names) => names,
+            Err(code) => return code,
+        };
+
+        if !module_name.is_empty() {
+            sync_manifest(dst_dir, &module_name, &installed, provider, args.dry_run);
         }
 
-        clean_orphans(src_path, dst_dir, provider, &source_prefix, args.dry_run);
-
         if provider == Provider::Codex {
-            let codex_root = dst_dir.parent().unwrap_or(dst_dir);
-            let config_path = codex_root.join("config.toml");
-            let entries = collect_codex_entries(src_path, provider, &config, &source_prefix);
-            if let Err(e) = deploy::write_codex_config_block(
-                &config_path,
-                &entries,
-                &source_prefix,
-                args.dry_run,
-            ) {
-                eprintln!("Error writing config.toml: {e}");
-                return ExitCode::from(1);
-            }
-            if args.dry_run {
-                println!(
-                    "[dry-run] Would write config.toml with {} agent entries",
-                    entries.len()
-                );
-            } else {
-                println!(
-                    "Updated {} with {} agent entries",
-                    config_path.display(),
-                    entries.len()
-                );
+            if let Err(code) =
+                sync_codex_config(dst_dir, src_path, &config, &source_prefix, args.dry_run)
+            {
+                return code;
             }
         }
     }
@@ -232,7 +251,7 @@ fn deploy_to_dir(
     config: &SidecarConfig,
     dry_run: bool,
     source_prefix: &str,
-) -> Result<(), ExitCode> {
+) -> Result<Vec<String>, ExitCode> {
     let results =
         deploy::deploy_agents_from_dir(src_path, dst_dir, provider, config, dry_run, source_prefix)
             .map_err(|e| {
@@ -241,10 +260,12 @@ fn deploy_to_dir(
             })?;
 
     let ext = provider.agent_extension();
+    let mut installed = Vec::new();
     for (filename, result) in &results {
         let name = filename.trim_end_matches(".md");
         match result {
             DeployResult::Deployed => {
+                installed.push(name.to_string());
                 if dry_run {
                     println!(
                         "[dry-run] Would install: {name}.{ext} to {}",
@@ -260,7 +281,7 @@ fn deploy_to_dir(
             DeployResult::SkippedTemplate | DeployResult::SkippedNoName => {}
         }
     }
-    Ok(())
+    Ok(installed)
 }
 
 fn collect_codex_entries(

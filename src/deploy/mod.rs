@@ -318,54 +318,28 @@ pub fn clean_agents(
 }
 
 pub fn clean_orphaned_agents(
-    src_dir: &Path,
     dst_dir: &Path,
+    module_name: &str,
+    current_agents: &[String],
     provider: Provider,
-    source_prefix: &str,
     dry_run: bool,
 ) -> Result<Vec<String>, String> {
-    if !dst_dir.is_dir() || source_prefix.is_empty() {
+    if module_name.is_empty() {
         return Ok(Vec::new());
     }
 
+    let previous = crate::manifest::read(dst_dir, module_name);
     let ext = provider.agent_extension();
-    let entries = std::fs::read_dir(dst_dir)
-        .map_err(|e| format!("failed to read {}: {e}", dst_dir.display()))?;
-
     let mut removed = Vec::new();
 
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        if path.extension().is_none_or(|e| e != ext) {
+    for name in &previous {
+        if current_agents.contains(name) {
             continue;
         }
-
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-
-        let Some(source) = parse::extract_source_field(&content) else {
-            continue; // No source field -- user-owned, skip
-        };
-
-        // Only process files belonging to this module
-        if !source.starts_with(source_prefix) {
+        let path = dst_dir.join(format!("{name}.{ext}"));
+        if !path.exists() {
             continue;
         }
-
-        // Extract the source filename (last path component)
-        let source_filename = source.rsplit('/').next().unwrap_or(&source);
-
-        // Check if source file still exists
-        if src_dir.join(source_filename).exists() {
-            continue; // Source exists, not an orphan
-        }
-
-        let name = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-
         if !dry_run {
             std::fs::remove_file(&path)
                 .map_err(|e| format!("failed to remove {}: {e}", path.display()))?;
@@ -376,8 +350,7 @@ pub fn clean_orphaned_agents(
                 }
             }
         }
-
-        removed.push(name);
+        removed.push(name.clone());
     }
 
     Ok(removed)

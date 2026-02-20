@@ -607,10 +607,7 @@ fn provider_skill_value_null_entry_returns_none() {
         "skills:\n    claude:\n        Demo:\n",
     );
     let config = SidecarConfig::load(dir.path());
-    assert_eq!(
-        config.provider_skill_value("claude", "Demo", "scope"),
-        None
-    );
+    assert_eq!(config.provider_skill_value("claude", "Demo", "scope"), None);
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use forge_lib::deploy::provider::Provider;
+use forge_lib::manifest;
 use forge_lib::sidecar::SidecarConfig;
 use forge_lib::skill::{self, SkillInstallAction};
 use std::collections::BTreeMap;
@@ -120,14 +121,10 @@ fn parse_args() -> Result<Args, ExitCode> {
     })
 }
 
-fn read_module_name() -> Option<String> {
-    let content = std::fs::read_to_string("module.yaml").ok()?;
-    forge_lib::parse::fm_value(&content, "name").or_else(|| {
-        content.lines().find_map(|l| {
-            l.strip_prefix("name:")
-                .map(|v| v.trim().trim_matches('"').trim_matches('\'').to_string())
-        })
-    })
+fn read_module_name(input_dir: &Path) -> Option<String> {
+    let module_root = input_dir.parent()?;
+    let content = std::fs::read_to_string(module_root.join("module.yaml")).ok()?;
+    forge_lib::parse::module_name(&content)
 }
 
 fn project_key() -> Result<String, String> {
@@ -161,25 +158,24 @@ fn resolve_dst(provider: Provider, scope: &str) -> Result<PathBuf, String> {
     }
 }
 
-fn clean_skill_dir(dst_dir: &Path) {
-    if dst_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(dst_dir) {
-            for entry in entries.filter_map(Result::ok) {
-                let path = entry.path();
-                if path.is_dir() {
-                    let _ = std::fs::remove_dir_all(&path);
-                }
+fn clean_module_skills(dst_dir: &Path, module_name: &str, dry_run: bool) {
+    if !dst_dir.is_dir() || module_name.is_empty() {
+        return;
+    }
+    let previous = manifest::read(dst_dir, module_name);
+    for name in &previous {
+        let path = dst_dir.join(name);
+        if path.is_dir() {
+            if dry_run {
+                println!("[dry-run] Would clean: {name}");
+            } else {
+                let _ = std::fs::remove_dir_all(&path);
             }
         }
     }
 }
 
-fn execute_action(
-    action: &SkillInstallAction,
-    dry_run: bool,
-    module_name: &str,
-    skills_dir_name: &str,
-) -> Result<(), String> {
+fn execute_action(action: &SkillInstallAction, dry_run: bool) -> Result<(), String> {
     match action {
         SkillInstallAction::Copy {
             skill_name,
@@ -193,13 +189,7 @@ fn execute_action(
                     dst_dir.display()
                 );
             } else {
-                skill::execute_skill_copy_with_marker(
-                    src_dir,
-                    skill_name,
-                    dst_dir,
-                    module_name,
-                    skills_dir_name,
-                )?;
+                skill::execute_skill_copy(src_dir, skill_name, dst_dir)?;
                 if !claude_fields.is_empty() {
                     let md_path = dst_dir.join(skill_name).join("SKILL.md");
                     if let Ok(content) = std::fs::read_to_string(&md_path) {
@@ -299,8 +289,10 @@ fn run(args: &Args) -> ExitCode {
     let module_root = skills_path.parent().unwrap_or(Path::new("."));
     let config = SidecarConfig::load(module_root);
 
-    if args.clean && !args.dry_run {
-        clean_skill_dir(&dst_dir);
+    let module_name = read_module_name(skills_path).unwrap_or_default();
+
+    if args.clean {
+        clean_module_skills(&dst_dir, &module_name, args.dry_run);
     }
 
     let mut actions = match skill::plan_skills_from_dir(
@@ -333,18 +325,23 @@ fn run(args: &Args) -> ExitCode {
         }
     }
 
-    let module_name = read_module_name().unwrap_or_default();
-
     for action in &actions {
-        if let Err(e) = execute_action(action, args.dry_run, &module_name, &args.skills_dir) {
+        if let Err(e) = execute_action(action, args.dry_run) {
             eprintln!("Error: {e}");
             return ExitCode::from(1);
         }
     }
 
-    // Remove orphaned skills whose source directory no longer exists
     if !module_name.is_empty() && args.provider != Provider::Gemini {
-        match skill::clean_orphaned_skills(Path::new("."), &dst_dir, &module_name, args.dry_run) {
+        let installed: Vec<String> = actions
+            .iter()
+            .filter_map(|a| match a {
+                SkillInstallAction::Copy { skill_name, .. } => Some(skill_name.clone()),
+                _ => None,
+            })
+            .collect();
+
+        match skill::clean_orphaned_skills(&dst_dir, &module_name, &installed, args.dry_run) {
             Ok(orphans) => {
                 for name in &orphans {
                     if args.dry_run {
@@ -355,6 +352,12 @@ fn run(args: &Args) -> ExitCode {
                 }
             }
             Err(e) => eprintln!("Warning: skill orphan scan failed: {e}"),
+        }
+
+        if !args.dry_run {
+            if let Err(e) = manifest::update(&dst_dir, &module_name, &installed) {
+                eprintln!("Warning: manifest update failed: {e}");
+            }
         }
     }
 

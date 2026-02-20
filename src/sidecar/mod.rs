@@ -96,12 +96,7 @@ impl SidecarConfig {
             .collect()
     }
 
-    pub fn provider_skill_value(
-        &self,
-        provider: &str,
-        skill: &str,
-        key: &str,
-    ) -> Option<String> {
+    pub fn provider_skill_value(&self, provider: &str, skill: &str, key: &str) -> Option<String> {
         let val = navigate(&self.raw, &["skills", provider, skill, key])?;
         normalize_value(val)
     }

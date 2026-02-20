@@ -7,6 +7,10 @@ fn cmd() -> Command {
     Command::cargo_bin("install-skills").unwrap()
 }
 
+fn write_module_yaml(dir: &std::path::Path, name: &str) {
+    fs::write(dir.join("module.yaml"), format!("name: {name}\n")).unwrap();
+}
+
 fn create_skill(dir: &std::path::Path, name: &str, claude_enabled: bool, codex_enabled: bool) {
     let skill_dir = dir.join(name);
     fs::create_dir_all(&skill_dir).unwrap();
@@ -24,6 +28,14 @@ fn create_skill(dir: &std::path::Path, name: &str, claude_enabled: bool, codex_e
              claude:\n    enabled: {claude_enabled}\n  gemini:\n    enabled: false\n  \
              codex:\n    enabled: {codex_enabled}\n"
         ),
+    )
+    .unwrap();
+}
+
+fn write_defaults_yaml(module_root: &std::path::Path, skill_name: &str) {
+    fs::write(
+        module_root.join("defaults.yaml"),
+        format!("skills:\n    claude:\n        {skill_name}:\n    codex:\n        {skill_name}:\n"),
     )
     .unwrap();
 }
@@ -64,6 +76,8 @@ fn copy_claude_skill() {
     let skills = dir.path().join("skills");
     let dst = dir.path().join("output");
     create_skill(&skills, "TestSkill", true, false);
+    write_defaults_yaml(dir.path(), "TestSkill");
+    write_module_yaml(dir.path(), "test-module");
 
     cmd()
         .arg(skills.to_str().unwrap())
@@ -73,7 +87,8 @@ fn copy_claude_skill() {
         .stdout(predicate::str::contains("Installed skill: TestSkill"));
 
     assert!(dst.join("TestSkill").join("SKILL.md").exists());
-    assert!(dst.join("TestSkill").join("SKILL.yaml").exists());
+    // SKILL.yaml is not copied (stripped during install)
+    assert!(!dst.join("TestSkill").join("SKILL.yaml").exists());
 }
 
 #[test]
@@ -82,6 +97,8 @@ fn copy_codex_skill() {
     let skills = dir.path().join("skills");
     let dst = dir.path().join("output");
     create_skill(&skills, "TestSkill", false, true);
+    write_defaults_yaml(dir.path(), "TestSkill");
+    write_module_yaml(dir.path(), "test-module");
 
     cmd()
         .arg(skills.to_str().unwrap())
@@ -99,6 +116,7 @@ fn disabled_skill_skipped() {
     let skills = dir.path().join("skills");
     let dst = dir.path().join("output");
     create_skill(&skills, "TestSkill", false, false);
+    write_module_yaml(dir.path(), "test-module");
 
     cmd()
         .arg(skills.to_str().unwrap())
@@ -116,6 +134,8 @@ fn dry_run_no_write() {
     let skills = dir.path().join("skills");
     let dst = dir.path().join("output");
     create_skill(&skills, "TestSkill", true, false);
+    write_defaults_yaml(dir.path(), "TestSkill");
+    write_module_yaml(dir.path(), "test-module");
 
     cmd()
         .arg(skills.to_str().unwrap())
@@ -141,6 +161,8 @@ fn custom_dst() {
     let skills = dir.path().join("skills");
     let custom = dir.path().join("custom-output");
     create_skill(&skills, "TestSkill", true, false);
+    write_defaults_yaml(dir.path(), "TestSkill");
+    write_module_yaml(dir.path(), "test-module");
 
     cmd()
         .arg(skills.to_str().unwrap())
@@ -159,6 +181,7 @@ fn include_agent_wrappers() {
     let dst = dir.path().join("output");
     fs::create_dir_all(&skills).unwrap();
     fs::create_dir_all(&agents).unwrap();
+    write_module_yaml(dir.path(), "test-module");
 
     fs::write(
         agents.join("TestAgent.md"),
@@ -182,7 +205,8 @@ fn include_agent_wrappers() {
         .stdout(predicate::str::contains("Installed skill: TestAgent"));
 
     assert!(dst.join("TestAgent").join("SKILL.md").exists());
-    assert!(dst.join("TestAgent").join("SKILL.yaml").exists());
+    // Agent wrappers generate SKILL.yaml but it's stripped during copy
+    assert!(!dst.join("TestAgent").join("SKILL.yaml").exists());
 }
 
 #[test]

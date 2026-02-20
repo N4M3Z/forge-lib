@@ -119,10 +119,7 @@ fn extract_meta_corrupt_yaml_ignored() {
 #[test]
 fn plan_copy_when_in_allowlist() {
     let dir = TempDir::new().unwrap();
-    let config = config_with_allowlist(
-        dir.path(),
-        "skills:\n    claude:\n        Demo:\n",
-    );
+    let config = config_with_allowlist(dir.path(), "skills:\n    claude:\n        Demo:\n");
     let meta = SkillMeta {
         name: "Demo".into(),
         description: "d".into(),
@@ -136,16 +133,15 @@ fn plan_copy_when_in_allowlist() {
         "workspace",
         &config,
     );
-    assert!(matches!(action, SkillInstallAction::Copy { ref skill_name, .. } if skill_name == "Demo"));
+    assert!(
+        matches!(action, SkillInstallAction::Copy { ref skill_name, .. } if skill_name == "Demo")
+    );
 }
 
 #[test]
 fn plan_skipped_when_not_in_allowlist() {
     let dir = TempDir::new().unwrap();
-    let config = config_with_allowlist(
-        dir.path(),
-        "skills:\n    claude:\n        Other:\n",
-    );
+    let config = config_with_allowlist(dir.path(), "skills:\n    claude:\n        Other:\n");
     let meta = SkillMeta {
         name: "Demo".into(),
         description: "d".into(),
@@ -184,10 +180,7 @@ fn plan_skipped_when_empty_allowlist() {
 #[test]
 fn plan_gemini_returns_cli_action() {
     let dir = TempDir::new().unwrap();
-    let config = config_with_allowlist(
-        dir.path(),
-        "skills:\n    gemini:\n        Demo:\n",
-    );
+    let config = config_with_allowlist(dir.path(), "skills:\n    gemini:\n        Demo:\n");
     let meta = SkillMeta {
         name: "Demo".into(),
         description: "d".into(),
@@ -224,16 +217,15 @@ fn plan_gemini_scope_from_config() {
         "user",
         &config,
     );
-    assert!(matches!(action, SkillInstallAction::GeminiCli { ref scope, .. } if scope == "workspace"));
+    assert!(
+        matches!(action, SkillInstallAction::GeminiCli { ref scope, .. } if scope == "workspace")
+    );
 }
 
 #[test]
 fn plan_copy_carries_claude_fields() {
     let dir = TempDir::new().unwrap();
-    let config = config_with_allowlist(
-        dir.path(),
-        "skills:\n    claude:\n        WikiLink:\n",
-    );
+    let config = config_with_allowlist(dir.path(), "skills:\n    claude:\n        WikiLink:\n");
     let mut fields = BTreeMap::new();
     fields.insert("argument-hint".into(), "[path]".into());
     let meta = SkillMeta {
@@ -250,8 +242,13 @@ fn plan_copy_carries_claude_fields() {
         &config,
     );
     match action {
-        SkillInstallAction::Copy { ref claude_fields, .. } => {
-            assert_eq!(claude_fields.get("argument-hint"), Some(&"[path]".to_string()));
+        SkillInstallAction::Copy {
+            ref claude_fields, ..
+        } => {
+            assert_eq!(
+                claude_fields.get("argument-hint"),
+                Some(&"[path]".to_string())
+            );
         }
         _ => panic!("expected Copy"),
     }
@@ -327,10 +324,7 @@ fn plan_from_dir_no_skill_yaml_needed() {
         None,
     );
 
-    let config = config_with_allowlist(
-        dir.path(),
-        "skills:\n    claude:\n        Simple:\n",
-    );
+    let config = config_with_allowlist(dir.path(), "skills:\n    claude:\n        Simple:\n");
 
     let actions = plan_skills_from_dir(
         &root,
@@ -342,7 +336,9 @@ fn plan_from_dir_no_skill_yaml_needed() {
     .unwrap();
 
     assert_eq!(actions.len(), 1);
-    assert!(matches!(&actions[0], SkillInstallAction::Copy { skill_name, .. } if skill_name == "Simple"));
+    assert!(
+        matches!(&actions[0], SkillInstallAction::Copy { skill_name, .. } if skill_name == "Simple")
+    );
 }
 
 #[test]
@@ -460,145 +456,79 @@ fn execute_copy_replaces_existing() {
     assert_eq!(content, "# New");
 }
 
-// ─── execute_skill_copy_with_marker ───
+// ─── execute_skill_copy: symlink guard ───
 
 #[test]
-fn execute_copy_with_marker_writes_source_yaml() {
+fn execute_copy_rejects_symlink() {
     let dir = TempDir::new().unwrap();
     let src = dir.path().join("src_skill");
     fs::create_dir_all(&src).unwrap();
     fs::write(src.join("SKILL.md"), "# Test").unwrap();
 
     let dst = dir.path().join("dst");
-    execute_skill_copy_with_marker(&src, "Council", &dst, "forge-council", "skills").unwrap();
+    fs::create_dir_all(&dst).unwrap();
+    let real_target = dir.path().join("real_target");
+    fs::create_dir_all(&real_target).unwrap();
+    std::os::unix::fs::symlink(&real_target, dst.join("TestSkill")).unwrap();
 
-    let marker = dst.join("Council").join("source.yaml");
-    assert!(marker.exists());
-    let content = fs::read_to_string(marker).unwrap();
-    assert!(content.contains("module: forge-council"));
-    assert!(content.contains("source: skills/Council"));
-}
-
-#[test]
-fn execute_copy_with_empty_module_skips_marker() {
-    let dir = TempDir::new().unwrap();
-    let src = dir.path().join("src_skill");
-    fs::create_dir_all(&src).unwrap();
-    fs::write(src.join("SKILL.md"), "# Test").unwrap();
-
-    let dst = dir.path().join("dst");
-    execute_skill_copy_with_marker(&src, "Council", &dst, "", "").unwrap();
-
-    assert!(!dst.join("Council").join("source.yaml").exists());
-}
-
-// ─── source marker ───
-
-#[test]
-fn source_marker_roundtrip() {
-    let dir = TempDir::new().unwrap();
-    write_source_marker(dir.path(), "forge-council", "skills/Council").unwrap();
-    let (module, source) = read_source_marker(dir.path()).unwrap();
-    assert_eq!(module, "forge-council");
-    assert_eq!(source, "skills/Council");
-}
-
-#[test]
-fn read_source_marker_missing_returns_none() {
-    let dir = TempDir::new().unwrap();
-    assert!(read_source_marker(dir.path()).is_none());
+    let result = execute_skill_copy(&src, "TestSkill", &dst);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("symlink"));
 }
 
 // ─── clean_orphaned_skills ───
 
 #[test]
 fn orphan_skill_removes_renamed() {
-    let root = TempDir::new().unwrap();
-    // Source has NewCouncil but not OldCouncil
-    let new_src = root.path().join("skills").join("NewCouncil");
-    fs::create_dir_all(&new_src).unwrap();
-    fs::write(new_src.join("SKILL.md"), "# New").unwrap();
+    let dir = TempDir::new().unwrap();
+    let dst = dir.path();
 
-    // Deployed dir has orphan from old name
-    let dst = TempDir::new().unwrap();
-    let old_deployed = dst.path().join("OldCouncil");
+    crate::manifest::update(dst, "forge-council", &["OldCouncil".to_string()]).unwrap();
+
+    let old_deployed = dst.join("OldCouncil");
     fs::create_dir_all(&old_deployed).unwrap();
     fs::write(old_deployed.join("SKILL.md"), "# Old").unwrap();
-    write_source_marker(&old_deployed, "forge-council", "skills/OldCouncil").unwrap();
 
-    let removed =
-        clean_orphaned_skills(root.path(), dst.path(), "forge-council", false).unwrap();
+    let current = vec!["NewCouncil".to_string()];
+    let removed = clean_orphaned_skills(dst, "forge-council", &current, false).unwrap();
     assert_eq!(removed, vec!["OldCouncil"]);
-    assert!(!dst.path().join("OldCouncil").exists());
+    assert!(!dst.join("OldCouncil").exists());
 }
 
 #[test]
 fn orphan_skill_keeps_current() {
-    let root = TempDir::new().unwrap();
-    let src = root.path().join("skills").join("Council");
-    fs::create_dir_all(&src).unwrap();
-    fs::write(src.join("SKILL.md"), "# Council").unwrap();
+    let dir = TempDir::new().unwrap();
+    let dst = dir.path();
 
-    let dst = TempDir::new().unwrap();
-    let deployed = dst.path().join("Council");
+    crate::manifest::update(dst, "forge-council", &["Council".to_string()]).unwrap();
+    let deployed = dst.join("Council");
     fs::create_dir_all(&deployed).unwrap();
     fs::write(deployed.join("SKILL.md"), "# Council").unwrap();
-    write_source_marker(&deployed, "forge-council", "skills/Council").unwrap();
 
-    let removed =
-        clean_orphaned_skills(root.path(), dst.path(), "forge-council", false).unwrap();
+    let current = vec!["Council".to_string()];
+    let removed = clean_orphaned_skills(dst, "forge-council", &current, false).unwrap();
     assert!(removed.is_empty());
-    assert!(dst.path().join("Council").exists());
-}
-
-#[test]
-fn orphan_skill_ignores_other_module() {
-    let root = TempDir::new().unwrap();
-    let dst = TempDir::new().unwrap();
-    let deployed = dst.path().join("OtherSkill");
-    fs::create_dir_all(&deployed).unwrap();
-    write_source_marker(&deployed, "other-module", "skills/OtherSkill").unwrap();
-
-    let removed =
-        clean_orphaned_skills(root.path(), dst.path(), "forge-council", false).unwrap();
-    assert!(removed.is_empty());
-    assert!(dst.path().join("OtherSkill").exists());
-}
-
-#[test]
-fn orphan_skill_ignores_unmarked() {
-    let root = TempDir::new().unwrap();
-    let dst = TempDir::new().unwrap();
-    let deployed = dst.path().join("UserSkill");
-    fs::create_dir_all(&deployed).unwrap();
-    fs::write(deployed.join("SKILL.md"), "# User").unwrap();
-    // No source.yaml marker
-
-    let removed =
-        clean_orphaned_skills(root.path(), dst.path(), "forge-council", false).unwrap();
-    assert!(removed.is_empty());
-    assert!(dst.path().join("UserSkill").exists());
+    assert!(dst.join("Council").exists());
 }
 
 #[test]
 fn orphan_skill_dry_run_preserves() {
-    let root = TempDir::new().unwrap();
-    let dst = TempDir::new().unwrap();
-    let deployed = dst.path().join("OldSkill");
-    fs::create_dir_all(&deployed).unwrap();
-    write_source_marker(&deployed, "forge-council", "skills/OldSkill").unwrap();
+    let dir = TempDir::new().unwrap();
+    let dst = dir.path();
 
-    let removed =
-        clean_orphaned_skills(root.path(), dst.path(), "forge-council", true).unwrap();
+    crate::manifest::update(dst, "forge-council", &["OldSkill".to_string()]).unwrap();
+    let deployed = dst.join("OldSkill");
+    fs::create_dir_all(&deployed).unwrap();
+
+    let removed = clean_orphaned_skills(dst, "forge-council", &[], true).unwrap();
     assert_eq!(removed, vec!["OldSkill"]);
-    assert!(dst.path().join("OldSkill").exists());
+    assert!(dst.join("OldSkill").exists());
 }
 
 #[test]
 fn orphan_skill_empty_module_skips() {
-    let root = TempDir::new().unwrap();
-    let dst = TempDir::new().unwrap();
-    let removed = clean_orphaned_skills(root.path(), dst.path(), "", false).unwrap();
+    let dir = TempDir::new().unwrap();
+    let removed = clean_orphaned_skills(dir.path(), "", &[], false).unwrap();
     assert!(removed.is_empty());
 }
 

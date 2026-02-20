@@ -7,6 +7,10 @@ fn cmd() -> Command {
     Command::cargo_bin("install-agents").unwrap()
 }
 
+fn write_module_yaml(dir: &std::path::Path, name: &str) {
+    fs::write(dir.join("module.yaml"), format!("name: {name}\n")).unwrap();
+}
+
 fn agent_md(name: &str) -> String {
     format!(
         "---\ntitle: {name}\nclaude.name: {name}\nclaude.model: sonnet\n\
@@ -39,8 +43,10 @@ fn deploy_basic() {
     let dst = dir.path().join(".claude/agents");
     fs::create_dir_all(&src).unwrap();
     fs::write(src.join("TestAgent.md"), agent_md("TestAgent")).unwrap();
+    write_module_yaml(dir.path(), "test-module");
 
     cmd()
+        .current_dir(dir.path())
         .arg(src.to_str().unwrap())
         .args(["--dst", dst.to_str().unwrap()])
         .assert()
@@ -49,7 +55,8 @@ fn deploy_basic() {
 
     assert!(dst.join("TestAgent.md").exists());
     let content = fs::read_to_string(dst.join("TestAgent.md")).unwrap();
-    assert!(content.contains("source: TestAgent.md"));
+    assert!(content.contains("source: test-module/"));
+    assert!(content.contains("TestAgent.md"));
 }
 
 #[test]
@@ -59,6 +66,7 @@ fn dry_run_no_write() {
     let dst = dir.path().join(".claude/agents");
     fs::create_dir_all(&src).unwrap();
     fs::write(src.join("TestAgent.md"), agent_md("TestAgent")).unwrap();
+    write_module_yaml(dir.path(), "test-module");
 
     cmd()
         .arg(src.to_str().unwrap())
@@ -80,6 +88,7 @@ fn clean_removes_synced() {
     fs::create_dir_all(&src).unwrap();
     fs::create_dir_all(&dst).unwrap();
     fs::write(src.join("TestAgent.md"), agent_md("TestAgent")).unwrap();
+    write_module_yaml(dir.path(), "test-module");
 
     // Deploy first so we have a properly formatted synced file
     Command::cargo_bin("install-agents")
@@ -104,6 +113,7 @@ fn skips_template() {
     let src = dir.path().join("agents");
     let dst = dir.path().join("output");
     fs::create_dir_all(&src).unwrap();
+    write_module_yaml(dir.path(), "test-module");
     fs::write(
         src.join("_Template.md"),
         "---\ntitle: Template\nclaude.name: Template\n---\n\nTemplate content.\n",
@@ -126,6 +136,7 @@ fn skips_user_owned() {
     fs::create_dir_all(&src).unwrap();
     fs::create_dir_all(&dst).unwrap();
     fs::write(src.join("MyAgent.md"), agent_md("MyAgent")).unwrap();
+    write_module_yaml(dir.path(), "test-module");
 
     // Pre-create a user-owned agent (no synced-from header)
     fs::write(
@@ -162,6 +173,7 @@ fn dst_override() {
     let custom_dst = dir.path().join("custom-output");
     fs::create_dir_all(&src).unwrap();
     fs::write(src.join("TestAgent.md"), agent_md("TestAgent")).unwrap();
+    write_module_yaml(dir.path(), "test-module");
 
     cmd()
         .arg(src.to_str().unwrap())
@@ -179,6 +191,7 @@ fn provider_detection_gemini() {
     let dst = dir.path().join(".gemini/agents");
     fs::create_dir_all(&src).unwrap();
     fs::write(src.join("TestAgent.md"), agent_md("TestAgent")).unwrap();
+    write_module_yaml(dir.path(), "test-module");
 
     cmd()
         .arg(src.to_str().unwrap())

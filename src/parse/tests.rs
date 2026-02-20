@@ -378,6 +378,50 @@ fn extract_source_user_content_no_source() {
     assert_eq!(extract_source_field(content), None);
 }
 
+// --- module_name ---
+
+#[test]
+fn module_name_plain_yaml() {
+    assert_eq!(
+        module_name("name: forge-council\n"),
+        Some("forge-council".into())
+    );
+}
+
+#[test]
+fn module_name_frontmatter() {
+    assert_eq!(
+        module_name("---\nname: forge-council\n---\n"),
+        Some("forge-council".into())
+    );
+}
+
+#[test]
+fn module_name_quoted() {
+    assert_eq!(
+        module_name("name: \"forge-council\"\n"),
+        Some("forge-council".into())
+    );
+}
+
+#[test]
+fn module_name_single_quoted() {
+    assert_eq!(
+        module_name("name: 'forge-council'\n"),
+        Some("forge-council".into())
+    );
+}
+
+#[test]
+fn module_name_missing() {
+    assert_eq!(module_name("version: 0.1.0\n"), None);
+}
+
+#[test]
+fn module_name_empty() {
+    assert_eq!(module_name(""), None);
+}
+
 // --- proptest ---
 
 #[cfg(test)]

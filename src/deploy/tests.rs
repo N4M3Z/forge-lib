@@ -1395,25 +1395,18 @@ fn clean_codex_config_block_noop_when_missing() {
 
 #[test]
 fn orphan_removes_renamed_agent() {
-    let src = TempDir::new().unwrap();
     let dst = TempDir::new().unwrap();
-    // Source has NewName.md but not OldName.md
-    fs::write(
-        src.path().join("NewName.md"),
-        "---\nname: NewName\n---\nBody.\n",
-    )
-    .unwrap();
-    // Deployed dir has orphan from old name
+    crate::manifest::update(dst.path(), "forge-council", &["OldName".to_string()]).unwrap();
     fs::write(
         dst.path().join("OldName.md"),
         "---\nname: OldName\nsource: forge-council/agents/OldName.md\n---\nOld body.\n",
     )
     .unwrap();
     let removed = clean_orphaned_agents(
-        src.path(),
         dst.path(),
+        "forge-council",
+        &["NewName".to_string()],
         Provider::Claude,
-        "forge-council/agents",
         false,
     )
     .unwrap();
@@ -1423,23 +1416,18 @@ fn orphan_removes_renamed_agent() {
 
 #[test]
 fn orphan_keeps_current_agent() {
-    let src = TempDir::new().unwrap();
     let dst = TempDir::new().unwrap();
-    fs::write(
-        src.path().join("Developer.md"),
-        "---\nname: Developer\n---\nBody.\n",
-    )
-    .unwrap();
+    crate::manifest::update(dst.path(), "forge-council", &["Developer".to_string()]).unwrap();
     fs::write(
         dst.path().join("Developer.md"),
         "---\nname: Developer\nsource: forge-council/agents/Developer.md\n---\nBody.\n",
     )
     .unwrap();
     let removed = clean_orphaned_agents(
-        src.path(),
         dst.path(),
+        "forge-council",
+        &["Developer".to_string()],
         Provider::Claude,
-        "forge-council/agents",
         false,
     )
     .unwrap();
@@ -1448,112 +1436,110 @@ fn orphan_keeps_current_agent() {
 }
 
 #[test]
-fn orphan_ignores_other_module() {
-    let src = TempDir::new().unwrap();
-    let dst = TempDir::new().unwrap();
-    // File belongs to different module
-    fs::write(
-        dst.path().join("Agent.md"),
-        "---\nname: Agent\nsource: other-module/agents/Agent.md\n---\nBody.\n",
-    )
-    .unwrap();
-    let removed = clean_orphaned_agents(
-        src.path(),
-        dst.path(),
-        Provider::Claude,
-        "forge-council/agents",
-        false,
-    )
-    .unwrap();
-    assert!(removed.is_empty());
-    assert!(dst.path().join("Agent.md").exists());
-}
-
-#[test]
-fn orphan_ignores_user_owned() {
-    let src = TempDir::new().unwrap();
-    let dst = TempDir::new().unwrap();
-    // No source field at all
-    fs::write(
-        dst.path().join("MyAgent.md"),
-        "User-created agent content.\n",
-    )
-    .unwrap();
-    let removed = clean_orphaned_agents(
-        src.path(),
-        dst.path(),
-        Provider::Claude,
-        "forge-council/agents",
-        false,
-    )
-    .unwrap();
-    assert!(removed.is_empty());
-    assert!(dst.path().join("MyAgent.md").exists());
-}
-
-#[test]
 fn orphan_dry_run_preserves_file() {
-    let src = TempDir::new().unwrap();
     let dst = TempDir::new().unwrap();
-    fs::write(
-        dst.path().join("Old.md"),
-        "---\nname: Old\nsource: forge-council/agents/Old.md\n---\nBody.\n",
-    )
-    .unwrap();
-    let removed = clean_orphaned_agents(
-        src.path(),
-        dst.path(),
-        Provider::Claude,
-        "forge-council/agents",
-        true,
-    )
-    .unwrap();
+    crate::manifest::update(dst.path(), "forge-council", &["Old".to_string()]).unwrap();
+    fs::write(dst.path().join("Old.md"), "---\nname: Old\n---\nBody.\n").unwrap();
+    let removed =
+        clean_orphaned_agents(dst.path(), "forge-council", &[], Provider::Claude, true).unwrap();
     assert_eq!(removed, vec!["Old"]);
     assert!(dst.path().join("Old.md").exists());
 }
 
 #[test]
 fn orphan_codex_removes_prompt_companion() {
-    let src = TempDir::new().unwrap();
     let dst = TempDir::new().unwrap();
+    crate::manifest::update(dst.path(), "forge-council", &["Old".to_string()]).unwrap();
     fs::write(
         dst.path().join("Old.toml"),
         "# source: forge-council/agents/Old.md\ndescription = \"Old\"\n",
     )
     .unwrap();
     fs::write(dst.path().join("Old.prompt.md"), "Old body.\n").unwrap();
-    let removed = clean_orphaned_agents(
-        src.path(),
-        dst.path(),
-        Provider::Codex,
-        "forge-council/agents",
-        false,
-    )
-    .unwrap();
+    let removed =
+        clean_orphaned_agents(dst.path(), "forge-council", &[], Provider::Codex, false).unwrap();
     assert_eq!(removed, vec!["Old"]);
     assert!(!dst.path().join("Old.toml").exists());
     assert!(!dst.path().join("Old.prompt.md").exists());
 }
 
 #[test]
-fn orphan_empty_prefix_skips() {
-    let src = TempDir::new().unwrap();
+fn orphan_empty_module_skips() {
     let dst = TempDir::new().unwrap();
-    let removed =
-        clean_orphaned_agents(src.path(), dst.path(), Provider::Claude, "", false).unwrap();
+    let removed = clean_orphaned_agents(dst.path(), "", &[], Provider::Claude, false).unwrap();
     assert!(removed.is_empty());
 }
 
 #[test]
 fn orphan_missing_dst_dir() {
-    let src = TempDir::new().unwrap();
     let removed = clean_orphaned_agents(
-        src.path(),
         Path::new("/nonexistent"),
+        "forge-council",
+        &[],
         Provider::Claude,
-        "forge-council/agents",
         false,
     )
     .unwrap();
     assert!(removed.is_empty());
+}
+
+// ─── Lifecycle: deploy → rename → orphan clean ───
+
+#[test]
+fn orphan_lifecycle_deploy_rename_clean() {
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    let config = SidecarConfig::default();
+    let prefix = "forge-council/agents";
+    let module = "forge-council";
+
+    // Step 1: Deploy "OldName" agent
+    let content = "---\nname: OldName\ndescription: Original\nversion: 0.1.0\n---\nBody.\n";
+    fs::write(src.path().join("OldName.md"), content).unwrap();
+    let results = deploy_agents_from_dir(
+        src.path(),
+        dst.path(),
+        Provider::Claude,
+        &config,
+        false,
+        prefix,
+    )
+    .unwrap();
+    assert_eq!(results.len(), 1);
+    assert!(dst.path().join("OldName.md").exists());
+
+    // Record in manifest
+    crate::manifest::update(dst.path(), module, &["OldName".to_string()]).unwrap();
+
+    // Step 2: Rename source to "NewName" (remove OldName, add NewName)
+    fs::remove_file(src.path().join("OldName.md")).unwrap();
+    let new_content = "---\nname: NewName\ndescription: Renamed\nversion: 0.2.0\n---\nBody.\n";
+    fs::write(src.path().join("NewName.md"), new_content).unwrap();
+
+    // Step 3: Deploy again (NewName)
+    let results = deploy_agents_from_dir(
+        src.path(),
+        dst.path(),
+        Provider::Claude,
+        &config,
+        false,
+        prefix,
+    )
+    .unwrap();
+    assert_eq!(results.len(), 1);
+    assert!(dst.path().join("NewName.md").exists());
+    // OldName still exists (deploy doesn't clean)
+    assert!(dst.path().join("OldName.md").exists());
+
+    // Step 4: Orphan clean removes OldName
+    let installed = vec!["NewName".to_string()];
+    let removed =
+        clean_orphaned_agents(dst.path(), module, &installed, Provider::Claude, false).unwrap();
+    assert_eq!(removed, vec!["OldName"]);
+    assert!(!dst.path().join("OldName.md").exists());
+    assert!(dst.path().join("NewName.md").exists());
+
+    // Step 5: Update manifest
+    crate::manifest::update(dst.path(), module, &installed).unwrap();
+    assert_eq!(crate::manifest::read(dst.path(), module), installed);
 }
