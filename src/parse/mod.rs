@@ -90,6 +90,20 @@ pub fn validate_agent_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn extract_source_field(content: &str) -> Option<String> {
+    // TOML format: # source: comment on first line
+    if let Some(first_line) = content.lines().next() {
+        if let Some(source) = first_line.strip_prefix("# source:") {
+            let source = source.trim();
+            if !source.is_empty() {
+                return Some(source.to_string());
+            }
+        }
+    }
+    // Frontmatter format: source: in YAML frontmatter
+    fm_value(content, "source")
+}
+
 pub fn is_synced_from(content: &str, expected_source: &str) -> bool {
     // TOML format: # source: comment on first line
     if let Some(first_line) = content.lines().next() {

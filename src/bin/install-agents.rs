@@ -93,6 +93,31 @@ fn read_module_name() -> Option<String> {
     })
 }
 
+fn clean_orphans(
+    src_path: &Path,
+    dst_dir: &Path,
+    provider: Provider,
+    source_prefix: &str,
+    dry_run: bool,
+) {
+    if source_prefix.is_empty() {
+        return;
+    }
+    match deploy::clean_orphaned_agents(src_path, dst_dir, provider, source_prefix, dry_run) {
+        Ok(orphans) => {
+            let ext = provider.agent_extension();
+            for name in &orphans {
+                if dry_run {
+                    println!("[dry-run] Would remove orphan: {name}.{ext}");
+                } else {
+                    println!("Removed orphan: {name}.{ext}");
+                }
+            }
+        }
+        Err(e) => eprintln!("Warning: orphan scan failed: {e}"),
+    }
+}
+
 fn run(args: &Args) -> ExitCode {
     let src_path = Path::new(&args.src_dir);
     if !src_path.is_dir() {
@@ -166,6 +191,8 @@ fn run(args: &Args) -> ExitCode {
         ) {
             return code;
         }
+
+        clean_orphans(src_path, dst_dir, provider, &source_prefix, args.dry_run);
 
         if provider == Provider::Codex {
             let codex_root = dst_dir.parent().unwrap_or(dst_dir);

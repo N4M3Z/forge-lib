@@ -171,6 +171,16 @@ pub fn plan_skills_from_dir(
 // ─── Skill Copy ───
 
 pub fn execute_skill_copy(src_dir: &Path, skill_name: &str, dst_dir: &Path) -> Result<(), String> {
+    execute_skill_copy_with_marker(src_dir, skill_name, dst_dir, "", "")
+}
+
+pub fn execute_skill_copy_with_marker(
+    src_dir: &Path,
+    skill_name: &str,
+    dst_dir: &Path,
+    module_name: &str,
+    skills_dir_name: &str,
+) -> Result<(), String> {
     std::fs::create_dir_all(dst_dir)
         .map_err(|e| format!("failed to create {}: {e}", dst_dir.display()))?;
 
@@ -180,7 +190,14 @@ pub fn execute_skill_copy(src_dir: &Path, skill_name: &str, dst_dir: &Path) -> R
             .map_err(|e| format!("failed to remove {}: {e}", target.display()))?;
     }
 
-    copy_dir_recursive(src_dir, &target)
+    copy_dir_recursive(src_dir, &target)?;
+
+    if !module_name.is_empty() {
+        let source_path = format!("{skills_dir_name}/{skill_name}");
+        write_source_marker(&target, module_name, &source_path)?;
+    }
+
+    Ok(())
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
@@ -244,6 +261,84 @@ pub fn merge_claude_fields(skill_md: &str, fields: &BTreeMap<String, String>) ->
     out.push_str(body);
 
     out
+}
+
+// ─── Source Marker ───
+
+const SOURCE_MARKER: &str = "source.yaml";
+
+pub fn write_source_marker(
+    skill_dir: &Path,
+    module_name: &str,
+    source_path: &str,
+) -> Result<(), String> {
+    let marker_path = skill_dir.join(SOURCE_MARKER);
+    let content = format!("module: {module_name}\nsource: {source_path}\n");
+    std::fs::write(&marker_path, content)
+        .map_err(|e| format!("failed to write {}: {e}", marker_path.display()))
+}
+
+pub fn read_source_marker(skill_dir: &Path) -> Option<(String, String)> {
+    let marker_path = skill_dir.join(SOURCE_MARKER);
+    let content = std::fs::read_to_string(marker_path).ok()?;
+    let mut module = None;
+    let mut source = None;
+    for line in content.lines() {
+        if let Some(val) = line.strip_prefix("module:") {
+            module = Some(val.trim().to_string());
+        } else if let Some(val) = line.strip_prefix("source:") {
+            source = Some(val.trim().to_string());
+        }
+    }
+    Some((module?, source?))
+}
+
+pub fn clean_orphaned_skills(
+    module_root: &Path,
+    dst_dir: &Path,
+    module_name: &str,
+    dry_run: bool,
+) -> Result<Vec<String>, String> {
+    if !dst_dir.is_dir() || module_name.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let entries = std::fs::read_dir(dst_dir)
+        .map_err(|e| format!("failed to read {}: {e}", dst_dir.display()))?;
+
+    let mut removed = Vec::new();
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let Some((marker_module, marker_source)) = read_source_marker(&path) else {
+            continue; // No marker -- not ours, skip
+        };
+
+        if marker_module != module_name {
+            continue; // Different module
+        }
+
+        // Check if source directory still exists
+        let source_path = module_root.join(&marker_source);
+        if source_path.is_dir() && source_path.join("SKILL.md").exists() {
+            continue; // Source exists
+        }
+
+        let skill_name = entry.file_name().to_string_lossy().to_string();
+
+        if !dry_run {
+            std::fs::remove_dir_all(&path)
+                .map_err(|e| format!("failed to remove {}: {e}", path.display()))?;
+        }
+
+        removed.push(skill_name);
+    }
+
+    Ok(removed)
 }
 
 // ─── Skill Generation (Codex wrappers) ───

@@ -1390,3 +1390,170 @@ fn clean_codex_config_block_noop_when_missing() {
     clean_codex_config_block(&config_path, false).unwrap();
     assert!(!config_path.exists());
 }
+
+// ─── clean_orphaned_agents ───
+
+#[test]
+fn orphan_removes_renamed_agent() {
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    // Source has NewName.md but not OldName.md
+    fs::write(
+        src.path().join("NewName.md"),
+        "---\nname: NewName\n---\nBody.\n",
+    )
+    .unwrap();
+    // Deployed dir has orphan from old name
+    fs::write(
+        dst.path().join("OldName.md"),
+        "---\nname: OldName\nsource: forge-council/agents/OldName.md\n---\nOld body.\n",
+    )
+    .unwrap();
+    let removed = clean_orphaned_agents(
+        src.path(),
+        dst.path(),
+        Provider::Claude,
+        "forge-council/agents",
+        false,
+    )
+    .unwrap();
+    assert_eq!(removed, vec!["OldName"]);
+    assert!(!dst.path().join("OldName.md").exists());
+}
+
+#[test]
+fn orphan_keeps_current_agent() {
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    fs::write(
+        src.path().join("Developer.md"),
+        "---\nname: Developer\n---\nBody.\n",
+    )
+    .unwrap();
+    fs::write(
+        dst.path().join("Developer.md"),
+        "---\nname: Developer\nsource: forge-council/agents/Developer.md\n---\nBody.\n",
+    )
+    .unwrap();
+    let removed = clean_orphaned_agents(
+        src.path(),
+        dst.path(),
+        Provider::Claude,
+        "forge-council/agents",
+        false,
+    )
+    .unwrap();
+    assert!(removed.is_empty());
+    assert!(dst.path().join("Developer.md").exists());
+}
+
+#[test]
+fn orphan_ignores_other_module() {
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    // File belongs to different module
+    fs::write(
+        dst.path().join("Agent.md"),
+        "---\nname: Agent\nsource: other-module/agents/Agent.md\n---\nBody.\n",
+    )
+    .unwrap();
+    let removed = clean_orphaned_agents(
+        src.path(),
+        dst.path(),
+        Provider::Claude,
+        "forge-council/agents",
+        false,
+    )
+    .unwrap();
+    assert!(removed.is_empty());
+    assert!(dst.path().join("Agent.md").exists());
+}
+
+#[test]
+fn orphan_ignores_user_owned() {
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    // No source field at all
+    fs::write(
+        dst.path().join("MyAgent.md"),
+        "User-created agent content.\n",
+    )
+    .unwrap();
+    let removed = clean_orphaned_agents(
+        src.path(),
+        dst.path(),
+        Provider::Claude,
+        "forge-council/agents",
+        false,
+    )
+    .unwrap();
+    assert!(removed.is_empty());
+    assert!(dst.path().join("MyAgent.md").exists());
+}
+
+#[test]
+fn orphan_dry_run_preserves_file() {
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    fs::write(
+        dst.path().join("Old.md"),
+        "---\nname: Old\nsource: forge-council/agents/Old.md\n---\nBody.\n",
+    )
+    .unwrap();
+    let removed = clean_orphaned_agents(
+        src.path(),
+        dst.path(),
+        Provider::Claude,
+        "forge-council/agents",
+        true,
+    )
+    .unwrap();
+    assert_eq!(removed, vec!["Old"]);
+    assert!(dst.path().join("Old.md").exists());
+}
+
+#[test]
+fn orphan_codex_removes_prompt_companion() {
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    fs::write(
+        dst.path().join("Old.toml"),
+        "# source: forge-council/agents/Old.md\ndescription = \"Old\"\n",
+    )
+    .unwrap();
+    fs::write(dst.path().join("Old.prompt.md"), "Old body.\n").unwrap();
+    let removed = clean_orphaned_agents(
+        src.path(),
+        dst.path(),
+        Provider::Codex,
+        "forge-council/agents",
+        false,
+    )
+    .unwrap();
+    assert_eq!(removed, vec!["Old"]);
+    assert!(!dst.path().join("Old.toml").exists());
+    assert!(!dst.path().join("Old.prompt.md").exists());
+}
+
+#[test]
+fn orphan_empty_prefix_skips() {
+    let src = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    let removed =
+        clean_orphaned_agents(src.path(), dst.path(), Provider::Claude, "", false).unwrap();
+    assert!(removed.is_empty());
+}
+
+#[test]
+fn orphan_missing_dst_dir() {
+    let src = TempDir::new().unwrap();
+    let removed = clean_orphaned_agents(
+        src.path(),
+        Path::new("/nonexistent"),
+        Provider::Claude,
+        "forge-council/agents",
+        false,
+    )
+    .unwrap();
+    assert!(removed.is_empty());
+}

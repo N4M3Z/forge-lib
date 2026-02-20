@@ -335,6 +335,49 @@ fn synced_from_toml_source_wrong_file() {
     assert!(!is_synced_from(content, "Agent.md"));
 }
 
+// --- extract_source_field ---
+
+#[test]
+fn extract_source_from_frontmatter() {
+    let content = "---\nname: Agent\nsource: forge-council/agents/Agent.md\n---\nBody";
+    assert_eq!(
+        extract_source_field(content),
+        Some("forge-council/agents/Agent.md".into())
+    );
+}
+
+#[test]
+fn extract_source_from_toml_comment() {
+    let content = "# source: forge-council/agents/Dev.md\ndescription = \"Dev\"\n";
+    assert_eq!(
+        extract_source_field(content),
+        Some("forge-council/agents/Dev.md".into())
+    );
+}
+
+#[test]
+fn extract_source_none_when_missing() {
+    let content = "---\nname: Agent\n---\nBody";
+    assert_eq!(extract_source_field(content), None);
+}
+
+#[test]
+fn extract_source_none_for_empty() {
+    assert_eq!(extract_source_field(""), None);
+}
+
+#[test]
+fn extract_source_bare_filename() {
+    let content = "---\nname: Dev\nsource: Dev.md\n---\nBody";
+    assert_eq!(extract_source_field(content), Some("Dev.md".into()));
+}
+
+#[test]
+fn extract_source_user_content_no_source() {
+    let content = "User-created agent content.\n";
+    assert_eq!(extract_source_field(content), None);
+}
+
 // --- proptest ---
 
 #[cfg(test)]

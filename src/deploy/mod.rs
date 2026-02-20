@@ -317,6 +317,72 @@ pub fn clean_agents(
     Ok(removed)
 }
 
+pub fn clean_orphaned_agents(
+    src_dir: &Path,
+    dst_dir: &Path,
+    provider: Provider,
+    source_prefix: &str,
+    dry_run: bool,
+) -> Result<Vec<String>, String> {
+    if !dst_dir.is_dir() || source_prefix.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let ext = provider.agent_extension();
+    let entries = std::fs::read_dir(dst_dir)
+        .map_err(|e| format!("failed to read {}: {e}", dst_dir.display()))?;
+
+    let mut removed = Vec::new();
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.extension().is_none_or(|e| e != ext) {
+            continue;
+        }
+
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+
+        let Some(source) = parse::extract_source_field(&content) else {
+            continue; // No source field -- user-owned, skip
+        };
+
+        // Only process files belonging to this module
+        if !source.starts_with(source_prefix) {
+            continue;
+        }
+
+        // Extract the source filename (last path component)
+        let source_filename = source.rsplit('/').next().unwrap_or(&source);
+
+        // Check if source file still exists
+        if src_dir.join(source_filename).exists() {
+            continue; // Source exists, not an orphan
+        }
+
+        let name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        if !dry_run {
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("failed to remove {}: {e}", path.display()))?;
+            if provider == Provider::Codex {
+                let prompt_path = dst_dir.join(format!("{name}.prompt.md"));
+                if prompt_path.exists() {
+                    let _ = std::fs::remove_file(&prompt_path);
+                }
+            }
+        }
+
+        removed.push(name);
+    }
+
+    Ok(removed)
+}
+
 pub fn scope_dirs(scope: &str, home: &Path) -> Result<Vec<PathBuf>, String> {
     let user_dirs = vec![
         home.join(".claude/agents"),

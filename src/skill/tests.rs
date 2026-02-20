@@ -460,6 +460,148 @@ fn execute_copy_replaces_existing() {
     assert_eq!(content, "# New");
 }
 
+// ─── execute_skill_copy_with_marker ───
+
+#[test]
+fn execute_copy_with_marker_writes_source_yaml() {
+    let dir = TempDir::new().unwrap();
+    let src = dir.path().join("src_skill");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("SKILL.md"), "# Test").unwrap();
+
+    let dst = dir.path().join("dst");
+    execute_skill_copy_with_marker(&src, "Council", &dst, "forge-council", "skills").unwrap();
+
+    let marker = dst.join("Council").join("source.yaml");
+    assert!(marker.exists());
+    let content = fs::read_to_string(marker).unwrap();
+    assert!(content.contains("module: forge-council"));
+    assert!(content.contains("source: skills/Council"));
+}
+
+#[test]
+fn execute_copy_with_empty_module_skips_marker() {
+    let dir = TempDir::new().unwrap();
+    let src = dir.path().join("src_skill");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("SKILL.md"), "# Test").unwrap();
+
+    let dst = dir.path().join("dst");
+    execute_skill_copy_with_marker(&src, "Council", &dst, "", "").unwrap();
+
+    assert!(!dst.join("Council").join("source.yaml").exists());
+}
+
+// ─── source marker ───
+
+#[test]
+fn source_marker_roundtrip() {
+    let dir = TempDir::new().unwrap();
+    write_source_marker(dir.path(), "forge-council", "skills/Council").unwrap();
+    let (module, source) = read_source_marker(dir.path()).unwrap();
+    assert_eq!(module, "forge-council");
+    assert_eq!(source, "skills/Council");
+}
+
+#[test]
+fn read_source_marker_missing_returns_none() {
+    let dir = TempDir::new().unwrap();
+    assert!(read_source_marker(dir.path()).is_none());
+}
+
+// ─── clean_orphaned_skills ───
+
+#[test]
+fn orphan_skill_removes_renamed() {
+    let root = TempDir::new().unwrap();
+    // Source has NewCouncil but not OldCouncil
+    let new_src = root.path().join("skills").join("NewCouncil");
+    fs::create_dir_all(&new_src).unwrap();
+    fs::write(new_src.join("SKILL.md"), "# New").unwrap();
+
+    // Deployed dir has orphan from old name
+    let dst = TempDir::new().unwrap();
+    let old_deployed = dst.path().join("OldCouncil");
+    fs::create_dir_all(&old_deployed).unwrap();
+    fs::write(old_deployed.join("SKILL.md"), "# Old").unwrap();
+    write_source_marker(&old_deployed, "forge-council", "skills/OldCouncil").unwrap();
+
+    let removed =
+        clean_orphaned_skills(root.path(), dst.path(), "forge-council", false).unwrap();
+    assert_eq!(removed, vec!["OldCouncil"]);
+    assert!(!dst.path().join("OldCouncil").exists());
+}
+
+#[test]
+fn orphan_skill_keeps_current() {
+    let root = TempDir::new().unwrap();
+    let src = root.path().join("skills").join("Council");
+    fs::create_dir_all(&src).unwrap();
+    fs::write(src.join("SKILL.md"), "# Council").unwrap();
+
+    let dst = TempDir::new().unwrap();
+    let deployed = dst.path().join("Council");
+    fs::create_dir_all(&deployed).unwrap();
+    fs::write(deployed.join("SKILL.md"), "# Council").unwrap();
+    write_source_marker(&deployed, "forge-council", "skills/Council").unwrap();
+
+    let removed =
+        clean_orphaned_skills(root.path(), dst.path(), "forge-council", false).unwrap();
+    assert!(removed.is_empty());
+    assert!(dst.path().join("Council").exists());
+}
+
+#[test]
+fn orphan_skill_ignores_other_module() {
+    let root = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    let deployed = dst.path().join("OtherSkill");
+    fs::create_dir_all(&deployed).unwrap();
+    write_source_marker(&deployed, "other-module", "skills/OtherSkill").unwrap();
+
+    let removed =
+        clean_orphaned_skills(root.path(), dst.path(), "forge-council", false).unwrap();
+    assert!(removed.is_empty());
+    assert!(dst.path().join("OtherSkill").exists());
+}
+
+#[test]
+fn orphan_skill_ignores_unmarked() {
+    let root = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    let deployed = dst.path().join("UserSkill");
+    fs::create_dir_all(&deployed).unwrap();
+    fs::write(deployed.join("SKILL.md"), "# User").unwrap();
+    // No source.yaml marker
+
+    let removed =
+        clean_orphaned_skills(root.path(), dst.path(), "forge-council", false).unwrap();
+    assert!(removed.is_empty());
+    assert!(dst.path().join("UserSkill").exists());
+}
+
+#[test]
+fn orphan_skill_dry_run_preserves() {
+    let root = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    let deployed = dst.path().join("OldSkill");
+    fs::create_dir_all(&deployed).unwrap();
+    write_source_marker(&deployed, "forge-council", "skills/OldSkill").unwrap();
+
+    let removed =
+        clean_orphaned_skills(root.path(), dst.path(), "forge-council", true).unwrap();
+    assert_eq!(removed, vec!["OldSkill"]);
+    assert!(dst.path().join("OldSkill").exists());
+}
+
+#[test]
+fn orphan_skill_empty_module_skips() {
+    let root = TempDir::new().unwrap();
+    let dst = TempDir::new().unwrap();
+    let removed = clean_orphaned_skills(root.path(), dst.path(), "", false).unwrap();
+    assert!(removed.is_empty());
+}
+
 // ─── Skill Generation (Codex wrappers) ───
 
 #[test]

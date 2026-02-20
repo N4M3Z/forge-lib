@@ -120,6 +120,16 @@ fn parse_args() -> Result<Args, ExitCode> {
     })
 }
 
+fn read_module_name() -> Option<String> {
+    let content = std::fs::read_to_string("module.yaml").ok()?;
+    forge_lib::parse::fm_value(&content, "name").or_else(|| {
+        content.lines().find_map(|l| {
+            l.strip_prefix("name:")
+                .map(|v| v.trim().trim_matches('"').trim_matches('\'').to_string())
+        })
+    })
+}
+
 fn project_key() -> Result<String, String> {
     let cwd = env::current_dir().map_err(|e| format!("failed to get cwd: {e}"))?;
     Ok(cwd.to_string_lossy().replace('/', "-"))
@@ -164,7 +174,12 @@ fn clean_skill_dir(dst_dir: &Path) {
     }
 }
 
-fn execute_action(action: &SkillInstallAction, dry_run: bool) -> Result<(), String> {
+fn execute_action(
+    action: &SkillInstallAction,
+    dry_run: bool,
+    module_name: &str,
+    skills_dir_name: &str,
+) -> Result<(), String> {
     match action {
         SkillInstallAction::Copy {
             skill_name,
@@ -178,7 +193,13 @@ fn execute_action(action: &SkillInstallAction, dry_run: bool) -> Result<(), Stri
                     dst_dir.display()
                 );
             } else {
-                skill::execute_skill_copy(src_dir, skill_name, dst_dir)?;
+                skill::execute_skill_copy_with_marker(
+                    src_dir,
+                    skill_name,
+                    dst_dir,
+                    module_name,
+                    skills_dir_name,
+                )?;
                 if !claude_fields.is_empty() {
                     let md_path = dst_dir.join(skill_name).join("SKILL.md");
                     if let Ok(content) = std::fs::read_to_string(&md_path) {
@@ -312,10 +333,28 @@ fn run(args: &Args) -> ExitCode {
         }
     }
 
+    let module_name = read_module_name().unwrap_or_default();
+
     for action in &actions {
-        if let Err(e) = execute_action(action, args.dry_run) {
+        if let Err(e) = execute_action(action, args.dry_run, &module_name, &args.skills_dir) {
             eprintln!("Error: {e}");
             return ExitCode::from(1);
+        }
+    }
+
+    // Remove orphaned skills whose source directory no longer exists
+    if !module_name.is_empty() && args.provider != Provider::Gemini {
+        match skill::clean_orphaned_skills(Path::new("."), &dst_dir, &module_name, args.dry_run) {
+            Ok(orphans) => {
+                for name in &orphans {
+                    if args.dry_run {
+                        println!("[dry-run] Would remove orphaned skill: {name}");
+                    } else {
+                        println!("Removed orphaned skill: {name}");
+                    }
+                }
+            }
+            Err(e) => eprintln!("Warning: skill orphan scan failed: {e}"),
         }
     }
 
