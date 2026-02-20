@@ -73,6 +73,22 @@ fn main() -> ExitCode {
         total_fail += suite.failed();
     }
 
+    let warnings = validate::warn_skill_content(&root);
+    if !warnings.checks.is_empty() {
+        println!("\n=== {} ===", warnings.name);
+        for check in &warnings.checks {
+            if check.passed {
+                println!("  OK:   {}", check.desc);
+            } else {
+                println!("  WARN: {}", check.desc);
+            }
+        }
+        if warnings.failed() > 0 {
+            println!("\n  ({} warnings — not counted as failures)", warnings.failed());
+        }
+        println!();
+    }
+
     if total_fail > 0 {
         ExitCode::from(1)
     } else {

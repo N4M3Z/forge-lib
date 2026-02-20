@@ -1196,6 +1196,21 @@ fn scope_all() {
 }
 
 #[test]
+fn scope_project() {
+    let home = Path::new("/home/user");
+    let dirs = scope_dirs("project", home).unwrap();
+    assert_eq!(dirs.len(), 3);
+    // Project key is CWD with / replaced by -
+    let key = std::env::current_dir()
+        .unwrap()
+        .to_string_lossy()
+        .replace('/', "-");
+    assert_eq!(dirs[0], home.join(format!(".claude/projects/{key}/agents")));
+    assert_eq!(dirs[1], home.join(format!(".gemini/projects/{key}/agents")));
+    assert_eq!(dirs[2], home.join(format!(".codex/projects/{key}/agents")));
+}
+
+#[test]
 fn scope_invalid() {
     assert!(scope_dirs("bogus", Path::new("/tmp")).is_err());
 }

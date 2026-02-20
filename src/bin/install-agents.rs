@@ -50,7 +50,7 @@ fn parse_args() -> Result<Args, ExitCode> {
             }
             "-h" | "--help" => {
                 println!(
-                    "Usage: install-agents <agents-dir> [--scope user|workspace|all] \
+                    "Usage: install-agents <agents-dir> [--scope user|workspace|project|all] \
                      [--dry-run] [--clean] [--dst <path>]"
                 );
                 return Err(ExitCode::SUCCESS);

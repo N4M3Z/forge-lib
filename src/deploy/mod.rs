@@ -3,6 +3,7 @@ pub mod provider;
 use crate::parse;
 use crate::sidecar::{resolve_model, SidecarConfig};
 use provider::Provider;
+use std::env;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -356,6 +357,11 @@ pub fn clean_orphaned_agents(
     Ok(removed)
 }
 
+fn project_key() -> Result<String, String> {
+    let cwd = env::current_dir().map_err(|e| format!("failed to get cwd: {e}"))?;
+    Ok(cwd.to_string_lossy().replace('/', "-"))
+}
+
 pub fn scope_dirs(scope: &str, home: &Path) -> Result<Vec<PathBuf>, String> {
     let user_dirs = vec![
         home.join(".claude/agents"),
@@ -371,13 +377,21 @@ pub fn scope_dirs(scope: &str, home: &Path) -> Result<Vec<PathBuf>, String> {
     match scope {
         "user" => Ok(user_dirs),
         "workspace" => Ok(workspace_dirs),
+        "project" => {
+            let key = project_key()?;
+            Ok(vec![
+                home.join(format!(".claude/projects/{key}/agents")),
+                home.join(format!(".gemini/projects/{key}/agents")),
+                home.join(format!(".codex/projects/{key}/agents")),
+            ])
+        }
         "all" => {
             let mut all = user_dirs;
             all.extend(workspace_dirs);
             Ok(all)
         }
         other => Err(format!(
-            "invalid scope {other:?}: use user, workspace, or all"
+            "invalid scope {other:?}: use user, workspace, project, or all"
         )),
     }
 }

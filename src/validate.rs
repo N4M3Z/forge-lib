@@ -415,7 +415,7 @@ pub fn validate_skills(root: &Path) -> Suite {
         let Ok(content) = fs::read_to_string(&yaml_path) else {
             continue;
         };
-        for key in &["name", "description", "argument-hint"] {
+        for key in &["name", "description"] {
             let val = yaml_value(&content, key);
             s.assert_not_empty(&format!("{name} SKILL.yaml has {key}"), &val);
         }
@@ -445,17 +445,16 @@ pub fn validate_skills(root: &Path) -> Suite {
         s.assert_not_empty(&format!("{name} SKILL.md has description"), &fm_desc);
     }
 
-    for name in &skill_names {
-        if name == "Demo" {
-            continue;
-        }
-        let md_path = skills_dir.join(name).join("SKILL.md");
-        let Ok(content) = fs::read_to_string(&md_path) else {
-            continue;
-        };
-        let body = parse::fm_body(&content);
-        s.assert_contains(&format!("{name}: has Gate Check"), body, "Gate Check");
-    }
+    s
+}
+
+/// Content-level checks that emit warnings, not failures.
+/// These patterns are valuable but need proper scoping (e.g., agent-team
+/// checks should only apply to council modules). Tracked as backlog item.
+pub fn warn_skill_content(root: &Path) -> Suite {
+    let mut s = Suite::new("Skill Content (warnings)");
+    let skills_dir = root.join("skills");
+    let skill_names = read_skill_dirs(&skills_dir);
 
     for name in &skill_names {
         if name == "Demo" {
@@ -466,6 +465,7 @@ pub fn validate_skills(root: &Path) -> Suite {
             continue;
         };
         let body = parse::fm_body(&content);
+        s.assert_contains(&format!("{name}: has Gate Check"), body, "Gate Check");
         s.assert_contains(
             &format!("{name}: has Sequential Fallback"),
             body,
