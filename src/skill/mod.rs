@@ -224,7 +224,7 @@ pub fn merge_claude_fields(skill_md: &str, fields: &BTreeMap<String, String>) ->
         // No frontmatter — wrap body with new frontmatter
         let mut out = String::from("---\n");
         for (k, v) in fields {
-            let _ = writeln!(out, "{k}: {v}");
+            let _ = writeln!(out, "{k}: {}", format_yaml_scalar(v));
         }
         out.push_str("---\n");
         out.push_str(skill_md);
@@ -240,13 +240,24 @@ pub fn merge_claude_fields(skill_md: &str, fields: &BTreeMap<String, String>) ->
         // Only add if not already present in frontmatter
         let key_prefix = format!("{k}:");
         if !fm.lines().any(|line| line.starts_with(&key_prefix)) {
-            let _ = writeln!(out, "{k}: {v}");
+            let _ = writeln!(out, "{k}: {}", format_yaml_scalar(v));
         }
     }
     out.push_str("---\n");
     out.push_str(body);
 
     out
+}
+
+fn format_yaml_scalar(value: &str) -> String {
+    // Keep simple scalars unquoted (booleans/numbers/identifiers), quote everything else.
+    if value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'))
+    {
+        return value.to_string();
+    }
+    format!("\"{}\"", escape_yaml_string(value))
 }
 
 // ─── Orphan Cleanup ───

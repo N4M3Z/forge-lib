@@ -385,7 +385,7 @@ fn merge_adds_fields_to_frontmatter() {
     let mut fields = BTreeMap::new();
     fields.insert("argument-hint".into(), "[path]".into());
     let result = merge_claude_fields(md, &fields);
-    assert!(result.contains("argument-hint: [path]"));
+    assert!(result.contains("argument-hint: \"[path]\""));
     assert!(result.contains("name: Demo"));
     assert!(result.contains("# Demo"));
 }
@@ -407,7 +407,7 @@ fn merge_multiple_fields() {
     fields.insert("argument-hint".into(), "[args]".into());
     fields.insert("disable-model-invocation".into(), "true".into());
     let result = merge_claude_fields(md, &fields);
-    assert!(result.contains("argument-hint: [args]"));
+    assert!(result.contains("argument-hint: \"[args]\""));
     assert!(result.contains("disable-model-invocation: true"));
 }
 
@@ -418,7 +418,7 @@ fn merge_no_frontmatter_wraps() {
     fields.insert("argument-hint".into(), "[args]".into());
     let result = merge_claude_fields(md, &fields);
     assert!(result.starts_with("---\n"));
-    assert!(result.contains("argument-hint: [args]"));
+    assert!(result.contains("argument-hint: \"[args]\""));
     assert!(result.contains("# Demo"));
 }
 
