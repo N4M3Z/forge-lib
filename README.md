@@ -53,9 +53,19 @@ Seven modules: `dci` (DCI/bash block validation), `parse` (frontmatter), `strip`
 | Binary | Purpose |
 |--------|---------|
 | `strip-front` | Strip YAML frontmatter and H1 heading from markdown |
-| `install-agents` | Deploy agent markdown files to Claude/Gemini/Codex directories |
+| `install-agents` | Deploy agent markdown files to Claude/Gemini/Codex directories (`.md` for Claude/Gemini/OpenCode, `.toml` for Codex) |
 | `install-skills` | Install skills with provider-specific routing and wrapper generation |
 | `validate-module` | Convention test suite for forge modules |
+
+### Codex Agent Output
+
+When `install-agents` targets Codex, each agent is rendered as `<Agent>.toml`.
+The markdown body (after YAML frontmatter is stripped) is written into
+`developer_instructions` as a TOML multiline string.
+
+Canonical output fixtures for this format are stored in
+`tests/fixtures/codex/` and are used by deploy tests to detect rendering
+regressions.
 
 ## Updating forge-lib
 

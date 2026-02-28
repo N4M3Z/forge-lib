@@ -50,22 +50,17 @@ pub fn format_agent_output(
             if let Some(ref effort) = meta.reasoning_effort {
                 let _ = writeln!(out, "model_reasoning_effort = \"{effort}\"");
             }
-            let prompt_filename = format!("{}.prompt.md", meta.name);
-            let instructions_path = format!("agents/{prompt_filename}");
-            let _ = writeln!(
-                out,
-                "model_instructions_file = \"{}\"",
-                toml_escape(&instructions_path)
-            );
-
-            let mut prompt_body = body.to_string();
-            if !prompt_body.ends_with('\n') {
-                prompt_body.push('\n');
+            out.push_str("developer_instructions = \"\"\"\n");
+            out.push_str(&toml_multiline_escape(body));
+            if !body.ends_with('\n') {
+                out.push('\n');
             }
+            out.push('\n');
+            out.push_str("\"\"\"\n");
 
             return AgentOutput {
                 primary: out,
-                prompt_file: Some((prompt_filename, prompt_body)),
+                prompt_file: None,
             };
         }
         Provider::Gemini => {
@@ -525,6 +520,10 @@ pub fn clean_codex_config_block(config_path: &Path, dry_run: bool) -> Result<(),
 
 fn toml_escape(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn toml_multiline_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace("\"\"\"", "\\\"\\\"\\\"")
 }
 
 #[cfg(test)]

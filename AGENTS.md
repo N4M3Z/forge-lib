@@ -47,7 +47,7 @@ All binaries support `--version` and `--help`. All support all providers
 | Binary | Purpose |
 |--------|---------|
 | `strip-front` | Strip YAML frontmatter and H1 heading from markdown |
-| `install-agents` | Deploy agent markdown to provider-specific directories |
+| `install-agents` | Deploy agent markdown to provider-specific directories (Codex renders `.toml` with inline `developer_instructions`) |
 | `install-skills` | Install skills with provider routing and wrapper generation |
 | `validate-module` | Convention test suite for forge modules (5 suites) |
 
@@ -91,6 +91,13 @@ install: $(INSTALL_AGENTS)
 - **Clippy pedantic**: All warnings enabled
 - **YAML**: `serde_yaml` for all parsing
 - **Testing**: Unit tests in `src/<module>/tests.rs`, integration tests in `tests/`
+
+### Test Fixtures
+
+- `tests/fixtures/codex/` contains canonical Codex TOML render outputs and
+  corresponding prompt markdown sources used by deploy tests.
+- Keep these fixtures in-repo. They are golden references for Codex rendering
+  behavior and protect against format regressions.
 
 ## Git Conventions
 

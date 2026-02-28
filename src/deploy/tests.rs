@@ -412,11 +412,9 @@ fn format_codex_toml_output() {
     assert!(output.primary.contains("model_reasoning_effort = \"low\""));
     assert!(output
         .primary
-        .contains("model_instructions_file = \"agents/SecurityArchitect.prompt.md\""));
+        .contains("developer_instructions = \"\"\"\nBody.\n\n\"\"\""));
     assert!(!output.primary.contains("---"));
-    let (filename, content) = output.prompt_file.unwrap();
-    assert_eq!(filename, "SecurityArchitect.prompt.md");
-    assert!(content.contains("Body."));
+    assert!(output.prompt_file.is_none());
 }
 
 #[test]
@@ -427,7 +425,8 @@ fn format_codex_no_reasoning_effort() {
     assert!(output
         .primary
         .contains("description = \"System architect\""));
-    assert!(output.prompt_file.is_some());
+    assert!(output.primary.contains("developer_instructions = \"\"\""));
+    assert!(output.prompt_file.is_none());
 }
 
 #[test]
@@ -470,13 +469,14 @@ fn format_body_preserved() {
 }
 
 #[test]
-fn format_codex_body_in_prompt_file() {
+fn format_codex_body_in_developer_instructions() {
     let meta = make_meta();
     let body = "## Role\n\nYou review architecture.\n\n## Constraints\n\nBe thorough.\n";
     let output = format_agent_output(&meta, body, Provider::Codex, true);
-    assert!(!output.primary.contains("## Role"));
-    let (_, prompt_content) = output.prompt_file.unwrap();
-    assert!(prompt_content.contains(body));
+    assert!(output.primary.contains("developer_instructions = \"\"\""));
+    assert!(output.primary.contains("## Role"));
+    assert!(output.primary.contains("## Constraints"));
+    assert!(output.prompt_file.is_none());
 }
 
 // ─── skills rendering ───
@@ -511,6 +511,28 @@ fn format_codex_ignores_skills() {
     meta.skills = vec!["Git".into()];
     let output = format_agent_output(&meta, "Body.\n", Provider::Codex, true);
     assert!(!output.primary.contains("skills"));
+}
+
+#[test]
+fn format_codex_matches_data_analyst_fixture() {
+    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/codex");
+    let expected = fs::read_to_string(fixture_dir.join("DataAnalyst.toml")).unwrap();
+    let body = fs::read_to_string(fixture_dir.join("DataAnalyst.prompt.md")).unwrap();
+    let meta = AgentMeta {
+        name: "DataAnalyst".into(),
+        display_name: "DataAnalyst".into(),
+        model: "gpt-5.3".into(),
+        description: "Data analyst — success metrics, KPIs, measurement strategies, business impact analysis, data-driven evaluation. USE WHEN metrics design, success criteria, impact analysis, data strategy.".into(),
+        tools: None,
+        skills: Vec::new(),
+        source_file: "DataAnalyst.md".into(),
+        source: "forge-council/agents/DataAnalyst.md".into(),
+        reasoning_effort: Some("low".into()),
+    };
+
+    let output = format_agent_output(&meta, &body, Provider::Codex, true);
+    assert_eq!(output.primary, expected);
+    assert!(output.prompt_file.is_none());
 }
 
 #[test]
@@ -1084,7 +1106,7 @@ fn clean_new_format() {
 // ─── Codex deploy ───
 
 #[test]
-fn deploy_codex_writes_toml_and_prompt() {
+fn deploy_codex_writes_inline_toml() {
     let dir = TempDir::new().unwrap();
     let config = SidecarConfig::default();
     let content = "---\nname: Developer\ndescription: Senior dev\nversion: 0.3.0\n---\nYou are a developer.\n";
@@ -1099,12 +1121,11 @@ fn deploy_codex_writes_toml_and_prompt() {
     );
     assert!(matches!(result, Ok(DeployResult::Deployed)));
     assert!(dir.path().join("Developer.toml").exists());
-    assert!(dir.path().join("Developer.prompt.md").exists());
+    assert!(!dir.path().join("Developer.prompt.md").exists());
     let toml = fs::read_to_string(dir.path().join("Developer.toml")).unwrap();
     assert!(toml.contains("description = \"Senior dev\""));
-    assert!(toml.contains("model_instructions_file = \"agents/Developer.prompt.md\""));
-    let prompt = fs::read_to_string(dir.path().join("Developer.prompt.md")).unwrap();
-    assert!(prompt.contains("You are a developer."));
+    assert!(toml.contains("developer_instructions = \"\"\""));
+    assert!(toml.contains("You are a developer."));
 }
 
 #[test]
