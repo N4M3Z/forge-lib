@@ -1,3 +1,11 @@
+# Rust build artifacts
 /target/
 /bin/
 Cargo.lock
+**/*.rs.bk
+
+# User config override
+config.yaml
+
+# macOS
+.DS_Store

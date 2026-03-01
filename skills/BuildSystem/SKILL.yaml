@@ -1,0 +1,6 @@
+name: BuildSystem
+description: "Install forge skills and agents without the Rust toolchain — provider-specific fallback adapters. USE WHEN rust not installed, cargo fails, can't compile, install without rust, manual install, shell bootstrap, provider setup, build system."
+
+sources:
+    - https://developers.openai.com/codex/rules/
+    - https://geminicli.com/docs/cli/gemini-md

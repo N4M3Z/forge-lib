@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Shared Rust library consumed as a git submodule at `lib/`. Not a Claude Code plugin -- no hooks, no skills, no plugin.json.
+Shared Rust library consumed as a git submodule at `lib/`. Not a Claude Code plugin -- no hooks, no plugin.json. Ships one skill (BuildSystem) for fallback installation without Rust.
 
 ## API Surface
 
@@ -26,6 +26,22 @@ Seven library modules:
 | `validate-module` | Convention test suite for forge modules |
 
 All binaries support `--version` and `--help`. All support all providers (Claude, Gemini, Codex, OpenCode).
+
+## Skills
+
+| Skill | What it does |
+|-------|-------------|
+| **BuildSystem** | Fallback installation without Rust — per-provider adapters (ClaudeAdapter, GeminiAdapter, CodexAdapter) |
+
+## Shell Fallback Scripts
+
+When Rust is unavailable, per-provider scripts install skills/agents/rules by copying files:
+
+| Script | Provider | Installs |
+|--------|----------|----------|
+| `scripts/claude/install.sh` | Claude Code | Skills + agents + rules |
+| `scripts/gemini/install.sh` | Gemini CLI | Skills (kebab-cased) |
+| `scripts/codex/install.sh` | Codex CLI | Skills |
 
 ## Build & Test
 
