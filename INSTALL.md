@@ -1,36 +1,95 @@
-# Installation
+# Install
 
-## As part of forge-core
+> **For AI agents**: This guide covers installation of forge-lib. Follow the steps for your platform.
 
-No installation needed. forge-core's dispatch binary exports `FORGE_LIB` pointing to this directory. All modules can source utilities directly:
+## Requirements
 
-```bash
-source "$FORGE_LIB/frontmatter.sh"
-```
+1. **Git** with submodule support
+2. **Rust toolchain** — `cargo` and `rustc` for building binaries
+3. **make** (POSIX) — macOS/Linux build orchestration
 
-## Standalone (for independent modules)
+## Build
 
-Clone directly into the module's `lib/` directory — `lib/` IS forge-lib:
+### As a submodule (most common)
+
+Forge modules consume forge-lib as a git submodule at `lib/`:
 
 ```bash
 cd your-module/
-git clone https://github.com/<user>/forge-lib.git lib
+git submodule add https://github.com/N4M3Z/forge-lib.git lib
+make -C lib build
 ```
 
-Add `lib/` to your module's `.gitignore` — it's a runtime dependency, not committed.
+Binaries are symlinked into `lib/bin/` for consumption by the parent module's Makefile.
 
-Then resolve in your scripts:
+### Standalone
+
+Clone and build directly:
 
 ```bash
-FORGE_LIB="${FORGE_LIB:-$MODULE_ROOT/lib}"
+git clone https://github.com/N4M3Z/forge-lib.git
+cd forge-lib
+make build
 ```
 
-This checks the forge-core env var first, falls back to the local clone.
+This compiles all Rust binaries in release mode and symlinks them to `bin/`:
+
+```bash
+make check    # verify all binaries are present
+```
+
+### Windows PowerShell fallback
+
+Use this if `make build` fails due to POSIX shell syntax:
+
+```powershell
+$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
+cargo build --release
+
+# Verify binaries
+.\target\release\strip-front.exe --version
+.\target\release\install-agents.exe --version
+.\target\release\install-skills.exe --version
+.\target\release\validate-module.exe --version
+.\target\release\yaml.exe --version
+```
+
+On Windows, reference binaries at `target\release\` directly — the `bin/` symlink step requires a POSIX shell.
+
+## Platforms
+
+- **macOS / Linux**: `make build` handles everything. Requires `cargo` on PATH.
+- **Windows**: Prefer WSL or Git Bash for `make` targets. If staying in PowerShell, use the fallback commands above. Rust builds natively on Windows — `cargo build --release` works without modification.
+
+## Configuration
+
+`defaults.yaml` ships the skill roster keyed by provider:
+
+```yaml
+skills:
+    claude:
+        BuildSystem:
+    gemini:
+        BuildSystem:
+```
+
+Create `config.yaml` (gitignored) to override — same structure, only the fields you want to change.
 
 ## Updating
 
+### As a submodule consumer
+
 ```bash
-cd lib && git pull
+git -C lib pull
+make -C lib build
+git add lib
+git commit -m "chore: update forge-lib submodule"
 ```
 
-Or if using forge-core, update the main repo (forge-lib is part of the tree).
+### Standalone
+
+```bash
+git pull
+make clean
+make build
+```

@@ -1,4 +1,5 @@
 name: forge-lib
 version: 0.6.0
+type: library
 description: "Shared Rust library and CLI binaries for Forge modules — frontmatter parsing, agent deployment, skill installation, module validation. USE WHEN building module tooling, deploying agents, validating conventions."
 events: []

@@ -1,6 +1,6 @@
 # forge-lib Makefile
 
-.PHONY: build clean test lint check
+.PHONY: build clean test lint check install verify
 
 RELEASE_DIR := target/release
 BIN_DIR     := bin
@@ -28,6 +28,18 @@ check:
 	    echo "  MISSING $$b (run: make build)"; \
 	  fi; \
 	done
+
+SCOPE     ?= workspace
+SKILL_SRC  = skills
+SKILLS     = BuildSystem
+INSTALL_SKILLS  = $(BIN_DIR)/install-skills
+VALIDATE_MODULE = $(BIN_DIR)/validate-module
+
+include mk/skills/install.mk
+include mk/skills/verify.mk
+
+install: install-skills
+verify: verify-skills
 
 clean:
 	cargo clean

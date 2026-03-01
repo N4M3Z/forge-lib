@@ -1,0 +1,12 @@
+# forge-lib skill roster.
+# Override: create config.yaml (gitignored) with only the fields you want to change.
+
+skills:
+    claude:
+        BuildSystem:
+    gemini:
+        BuildSystem:
+    codex:
+        BuildSystem:
+    opencode:
+        BuildSystem:

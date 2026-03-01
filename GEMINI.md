@@ -26,10 +26,11 @@ The project uses a `Makefile` to manage the Rust toolchain and binary symlinking
 
 ## Architecture & Modules
 
-The library is organized into six functional modules:
+The library is organized into seven functional modules:
 
 | Module | Key Functions / Responsibilities |
 | :--- | :--- |
+| `dci` | `extract_dci_lines`, `extract_bash_block_lines`, `validate_dci` — DCI and bash block validation. |
 | `parse` | `fm_value`, `fm_body`, `fm_list`, `split_frontmatter` — Low-level YAML extraction. |
 | `strip` | `strip_front`, `strip_front_keep` — Clean markdown by removing metadata and H1 headings. |
 | `sidecar` | `SidecarConfig::load` — Loading agent and skill YAML configurations. |
