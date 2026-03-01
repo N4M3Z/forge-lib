@@ -1,0 +1,10 @@
+frontmatter:
+    optional: true
+    fields:
+        - name: paths
+          type: array
+          optional: true
+
+heading_rules:
+    no_skip_levels: true
+    max_depth: 2
