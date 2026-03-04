@@ -234,6 +234,17 @@ pub fn deploy_agent(
             .map_err(|e| format!("failed to create {}: {e}", dst_dir.display()))?;
         std::fs::write(&out_path, &output.primary)
             .map_err(|e| format!("failed to write {}: {e}", out_path.display()))?;
+        if provider == Provider::Codex {
+            let legacy_prompt_path = dst_dir.join(format!("{}.prompt.md", meta.name));
+            if let Err(err) = std::fs::remove_file(&legacy_prompt_path) {
+                if err.kind() != std::io::ErrorKind::NotFound {
+                    return Err(format!(
+                        "failed to remove {}: {err}",
+                        legacy_prompt_path.display()
+                    ));
+                }
+            }
+        }
         if let Some((ref prompt_filename, ref prompt_content)) = output.prompt_file {
             let prompt_path = dst_dir.join(prompt_filename);
             std::fs::write(&prompt_path, prompt_content)

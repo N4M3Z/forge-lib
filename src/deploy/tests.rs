@@ -1154,6 +1154,31 @@ fn deploy_codex_overwrite_with_source() {
 }
 
 #[test]
+fn deploy_codex_overwrite_removes_legacy_prompt_file() {
+    let dir = TempDir::new().unwrap();
+    let config = SidecarConfig::default();
+    fs::write(
+        dir.path().join("Developer.toml"),
+        "# source: Developer.md\ndescription = \"Old\"\n",
+    )
+    .unwrap();
+    fs::write(dir.path().join("Developer.prompt.md"), "Legacy prompt.\n").unwrap();
+    let content =
+        "---\nname: Developer\ndescription: Updated dev\nversion: 0.3.0\n---\nNew body.\n";
+    let result = deploy_agent(
+        content,
+        "Developer.md",
+        dir.path(),
+        Provider::Codex,
+        &config,
+        false,
+        "",
+    );
+    assert!(matches!(result, Ok(DeployResult::Deployed)));
+    assert!(!dir.path().join("Developer.prompt.md").exists());
+}
+
+#[test]
 fn deploy_codex_skips_user_owned_toml() {
     let dir = TempDir::new().unwrap();
     let config = SidecarConfig::default();

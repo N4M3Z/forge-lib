@@ -213,3 +213,35 @@ fn help_flag() {
         .success()
         .stdout(predicate::str::contains("Usage"));
 }
+
+#[test]
+fn codex_rename_cleans_legacy_prompt_orphan() {
+    let dir = tempdir().unwrap();
+    let src = dir.path().join("agents");
+    let dst = dir.path().join(".codex/agents");
+    fs::create_dir_all(&src).unwrap();
+    write_module_yaml(dir.path(), "test-module");
+
+    fs::write(src.join("Agent.md"), agent_md("OldAgent")).unwrap();
+    cmd()
+        .arg(src.to_str().unwrap())
+        .args(["--dst", dst.to_str().unwrap()])
+        .assert()
+        .success();
+
+    fs::write(dst.join("OldAgent.prompt.md"), "Legacy prompt.\n").unwrap();
+    assert!(dst.join("OldAgent.toml").exists());
+    assert!(dst.join("OldAgent.prompt.md").exists());
+
+    fs::write(src.join("Agent.md"), agent_md("NewAgent")).unwrap();
+    cmd()
+        .arg(src.to_str().unwrap())
+        .args(["--dst", dst.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Removed orphan: OldAgent.toml"));
+
+    assert!(dst.join("NewAgent.toml").exists());
+    assert!(!dst.join("OldAgent.toml").exists());
+    assert!(!dst.join("OldAgent.prompt.md").exists());
+}

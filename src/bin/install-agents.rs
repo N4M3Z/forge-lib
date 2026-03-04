@@ -266,7 +266,21 @@ fn deploy_to_dir(
         let name = filename.trim_end_matches(".md");
         match result {
             DeployResult::Deployed => {
-                installed.push(name.to_string());
+                let source_path = src_path.join(filename);
+                let deployed_name = std::fs::read_to_string(&source_path)
+                    .ok()
+                    .and_then(|content| {
+                        deploy::extract_agent_meta(
+                            &content,
+                            filename,
+                            provider,
+                            config,
+                            source_prefix,
+                        )
+                        .map(|meta| meta.name)
+                    })
+                    .unwrap_or_else(|| name.to_string());
+                installed.push(deployed_name);
                 if dry_run {
                     println!(
                         "[dry-run] Would install: {name}.{ext} to {}",
