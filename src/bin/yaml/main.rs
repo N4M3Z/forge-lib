@@ -5,6 +5,7 @@
 //!   yaml list   <file> <path>              # array → one item per line
 //!   yaml map    <file> <path>              # mapping → key\tvalue per line
 //!   yaml keys   <file> <path>              # mapping → keys only
+//!   yaml env    <file|dir> <path> [--prefix P] # mapping → shell export lines
 //!   yaml nested <file> <parent> <child> [default]  # legacy (use value with dot-path)
 //!
 //! Path examples:
@@ -233,6 +234,90 @@ fn cmd_get(args: &[String]) {
     }
 }
 
+// --- env ---
+
+/// Deep merge overlay onto base. Overlay values win for scalars;
+/// mappings are merged recursively.
+fn deep_merge(base: &mut Value, overlay: &Value) {
+    match (base, overlay) {
+        (Value::Mapping(base_map), Value::Mapping(overlay_map)) => {
+            for (k, v) in overlay_map {
+                if let Some(base_val) = base_map.get_mut(k) {
+                    deep_merge(base_val, v);
+                } else {
+                    base_map.insert(k.clone(), v.clone());
+                }
+            }
+        }
+        (base, overlay) => {
+            *base = overlay.clone();
+        }
+    }
+}
+
+fn shell_escape(s: &str) -> String {
+    s.replace('\'', "'\\''")
+}
+
+fn flatten_env(mapping: &Mapping, prefix: &str) -> Vec<String> {
+    let mut output = Vec::new();
+    for (k, v) in mapping {
+        let key_part = as_str(k).to_uppercase().replace('-', "_");
+        let full_key = format!("{prefix}_{key_part}");
+        match v {
+            Value::String(_) | Value::Number(_) | Value::Bool(_) => {
+                let raw = as_str(v);
+                let val = strip_quotes(&raw);
+                output.push(format!("export {full_key}='{}'", shell_escape(val)));
+            }
+            Value::Mapping(nested) => {
+                output.extend(flatten_env(nested, &full_key));
+            }
+            _ => {}
+        }
+    }
+    output
+}
+
+fn cmd_env(args: &[String]) {
+    if args.len() < 2 {
+        eprintln!("Usage: yaml env <file|dir> <path> [--prefix PREFIX]");
+        process::exit(1);
+    }
+    let source = &args[0];
+    let doc = if std::path::Path::new(source).is_dir() {
+        let dir = source.trim_end_matches('/');
+        let mut base = load(&format!("{dir}/defaults.yaml"));
+        let overlay = load(&format!("{dir}/config.yaml"));
+        deep_merge(&mut base, &overlay);
+        base
+    } else {
+        load(source)
+    };
+    let segments = parse_path(&args[1]);
+
+    let mut prefix = "FORGE";
+    let remaining = &args[2..];
+    let mut i = 0;
+    while i < remaining.len() {
+        if remaining[i] == "--prefix" {
+            if i + 1 < remaining.len() {
+                prefix = &remaining[i + 1];
+                i += 2;
+                continue;
+            }
+        }
+        i += 1;
+    }
+
+    let value = walk(&doc, &segments).unwrap_or(Value::Null);
+    if let Value::Mapping(ref map) = value {
+        for line in flatten_env(map, prefix) {
+            println!("{line}");
+        }
+    }
+}
+
 // Legacy: `yaml nested <file> <parent> <child> [default]`
 fn cmd_nested(args: &[String]) {
     if args.len() < 3 {
@@ -258,6 +343,7 @@ fn main() {
         eprintln!("  list   <file> <path>             Print array items, one per line");
         eprintln!("  map    <file> <path>             Print mapping as key\\tvalue lines");
         eprintln!("  keys   <file> <path>             Print mapping keys, one per line");
+        eprintln!("  env    <file|dir> <path> [--prefix P]  Flatten mapping to shell exports");
         eprintln!("  nested <file> <p> <c> [default]  Legacy: same as value with <p>.<c>");
         eprintln!();
         eprintln!("Paths: .field.subfield, .array[0], .deep.path[1].key");
@@ -273,10 +359,11 @@ fn main() {
         "list" => cmd_list(rest),
         "map" => cmd_map(rest),
         "keys" => cmd_keys(rest),
+        "env" => cmd_env(rest),
         "nested" => cmd_nested(rest),
         _ => {
             eprintln!("Unknown command: {cmd}");
-            eprintln!("Commands: get, value, list, map, keys, nested");
+            eprintln!("Commands: get, value, list, map, keys, env, nested");
             process::exit(1);
         }
     }

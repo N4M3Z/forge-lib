@@ -8,6 +8,15 @@ fn temp_yaml(content: &str) -> tempfile::NamedTempFile {
     f
 }
 
+fn temp_dir_with(defaults: &str, config: Option<&str>) -> tempfile::TempDir {
+    let dir = tempfile::TempDir::new().unwrap();
+    fs::write(dir.path().join("defaults.yaml"), defaults).unwrap();
+    if let Some(cfg) = config {
+        fs::write(dir.path().join("config.yaml"), cfg).unwrap();
+    }
+    dir
+}
+
 // --- parse_path ---
 
 #[test]
@@ -327,4 +336,145 @@ agents:
     let doc = load(f.path().to_str().unwrap());
     let v = walk(&doc, &parse_path(".agents.SoftwareDeveloper.model")).unwrap();
     assert_eq!(as_str(&v), "fast");
+}
+
+// --- env ---
+
+#[test]
+fn env_flat_mapping() {
+    let f = temp_yaml("commands:\n  calendar: bin/calendar.sh\n  safe_read: bin/safe-read\n");
+    let doc = load(f.path().to_str().unwrap());
+    if let Some(Value::Mapping(map)) = walk(&doc, &parse_path(".commands")) {
+        let lines = flatten_env(&map, "FORGE");
+        assert_eq!(
+            lines,
+            vec![
+                "export FORGE_CALENDAR='bin/calendar.sh'",
+                "export FORGE_SAFE_READ='bin/safe-read'",
+            ]
+        );
+    } else {
+        panic!("expected mapping");
+    }
+}
+
+#[test]
+fn env_nested_mapping() {
+    let f = temp_yaml("a:\n  b:\n    c: deep\n");
+    let doc = load(f.path().to_str().unwrap());
+    if let Some(Value::Mapping(map)) = walk(&doc, &parse_path(".a")) {
+        let lines = flatten_env(&map, "FORGE");
+        assert_eq!(lines, vec!["export FORGE_B_C='deep'"]);
+    } else {
+        panic!("expected mapping");
+    }
+}
+
+#[test]
+fn env_custom_prefix() {
+    let f = temp_yaml("tools:\n  git: /usr/bin/git\n");
+    let doc = load(f.path().to_str().unwrap());
+    if let Some(Value::Mapping(map)) = walk(&doc, &parse_path(".tools")) {
+        let lines = flatten_env(&map, "MY_PREFIX");
+        assert_eq!(lines, vec!["export MY_PREFIX_GIT='/usr/bin/git'"]);
+    } else {
+        panic!("expected mapping");
+    }
+}
+
+#[test]
+fn env_default_prefix() {
+    let f = temp_yaml("name: test\n");
+    let doc = load(f.path().to_str().unwrap());
+    if let Value::Mapping(ref map) = doc {
+        let lines = flatten_env(map, "FORGE");
+        assert_eq!(lines, vec!["export FORGE_NAME='test'"]);
+    } else {
+        panic!("expected mapping");
+    }
+}
+
+#[test]
+fn env_skips_sequences() {
+    let f = temp_yaml("items:\n  list:\n    - a\n    - b\n  name: test\n");
+    let doc = load(f.path().to_str().unwrap());
+    if let Some(Value::Mapping(map)) = walk(&doc, &parse_path(".items")) {
+        let lines = flatten_env(&map, "FORGE");
+        assert_eq!(lines, vec!["export FORGE_NAME='test'"]);
+    } else {
+        panic!("expected mapping");
+    }
+}
+
+// --- deep_merge ---
+
+#[test]
+fn merge_scalar_override() {
+    let mut base: Value = serde_yaml::from_str("adr:\n  directory: docs/decisions\n  prefix: date\n").unwrap();
+    let overlay: Value = serde_yaml::from_str("adr:\n  directory: Inbox/ADR\n").unwrap();
+    deep_merge(&mut base, &overlay);
+    let v = walk(&base, &parse_path(".adr.directory")).unwrap();
+    assert_eq!(as_str(&v), "Inbox/ADR");
+    let v = walk(&base, &parse_path(".adr.prefix")).unwrap();
+    assert_eq!(as_str(&v), "date");
+}
+
+#[test]
+fn merge_adds_new_keys() {
+    let mut base: Value = serde_yaml::from_str("a:\n  x: 1\n").unwrap();
+    let overlay: Value = serde_yaml::from_str("a:\n  y: 2\n").unwrap();
+    deep_merge(&mut base, &overlay);
+    assert_eq!(as_str(&walk(&base, &parse_path(".a.x")).unwrap()), "1");
+    assert_eq!(as_str(&walk(&base, &parse_path(".a.y")).unwrap()), "2");
+}
+
+#[test]
+fn merge_empty_overlay_is_noop() {
+    let mut base: Value = serde_yaml::from_str("key: value\n").unwrap();
+    let overlay = Value::Mapping(Mapping::default());
+    deep_merge(&mut base, &overlay);
+    assert_eq!(as_str(&walk(&base, &parse_path(".key")).unwrap()), "value");
+}
+
+// --- env directory mode ---
+
+#[test]
+fn env_dir_defaults_only() {
+    let dir = temp_dir_with("adr:\n  directory: docs/decisions\n  prefix: date\n", None);
+    let dir_path = dir.path().to_str().unwrap().to_string();
+    let doc = {
+        let mut base = load(&format!("{dir_path}/defaults.yaml"));
+        let overlay = load(&format!("{dir_path}/config.yaml"));
+        deep_merge(&mut base, &overlay);
+        base
+    };
+    if let Some(Value::Mapping(map)) = walk(&doc, &parse_path(".adr")) {
+        let lines = flatten_env(&map, "FORGE_ADR");
+        assert!(lines.contains(&"export FORGE_ADR_DIRECTORY='docs/decisions'".to_string()));
+        assert!(lines.contains(&"export FORGE_ADR_PREFIX='date'".to_string()));
+    } else {
+        panic!("expected mapping");
+    }
+}
+
+#[test]
+fn env_dir_config_overrides() {
+    let dir = temp_dir_with(
+        "adr:\n  directory: docs/decisions\n  prefix: date\n",
+        Some("adr:\n  directory: Inbox/ADR\n"),
+    );
+    let dir_path = dir.path().to_str().unwrap().to_string();
+    let doc = {
+        let mut base = load(&format!("{dir_path}/defaults.yaml"));
+        let overlay = load(&format!("{dir_path}/config.yaml"));
+        deep_merge(&mut base, &overlay);
+        base
+    };
+    if let Some(Value::Mapping(map)) = walk(&doc, &parse_path(".adr")) {
+        let lines = flatten_env(&map, "FORGE_ADR");
+        assert!(lines.contains(&"export FORGE_ADR_DIRECTORY='Inbox/ADR'".to_string()));
+        assert!(lines.contains(&"export FORGE_ADR_PREFIX='date'".to_string()));
+    } else {
+        panic!("expected mapping");
+    }
 }
